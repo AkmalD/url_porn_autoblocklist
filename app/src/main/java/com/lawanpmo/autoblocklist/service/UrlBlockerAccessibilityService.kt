@@ -188,6 +188,7 @@ class UrlBlockerAccessibilityService : AccessibilityService() {
                 cachedUrlBarId = null
                 cachedUrlBarPackage = null
                 stopContinuousMonitoring()
+                cancelPendingBlock()  // Cancel block if user left browser
             }
         }
     }
@@ -272,6 +273,22 @@ class UrlBlockerAccessibilityService : AccessibilityService() {
         if (result.isAdult) {
             Log.w(TAG, "Adult content detected: $url (score=${result.score})")
             scheduleBlock(url)
+        } else {
+            // URL is safe - cancel any pending block
+            // This handles the case where user deletes/changes the blocked URL
+            cancelPendingBlock()
+        }
+    }
+
+    /**
+     * Cancel any pending block job.
+     * Called when user navigates to safe URL or deletes blocked URL.
+     */
+    private fun cancelPendingBlock() {
+        if (pendingBlockJob?.isActive == true) {
+            pendingBlockJob?.cancel()
+            pendingBlockJob = null
+            Log.d(TAG, "Cancelled pending block")
         }
     }
 
