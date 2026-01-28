@@ -329,14 +329,8 @@ class UrlBlockerAccessibilityService : AccessibilityService() {
 
     private fun extractUrlFromBrowser(): String? {
         val rootNode = rootInActiveWindow ?: return null
-
-        try {
-            // Use direct lookup only - this targets specific URL bar IDs
-            // Tree traversal is disabled to prevent picking up autocomplete suggestions
-            return findUrlDirectly(rootNode)
-        } finally {
-            rootNode.recycle()
-        }
+        // Note: recycle() is deprecated in API 34+, system handles recycling automatically
+        return findUrlDirectly(rootNode)
     }
 
     /**
@@ -351,18 +345,13 @@ class UrlBlockerAccessibilityService : AccessibilityService() {
     private fun findUrlDirectly(rootNode: AccessibilityNodeInfo): String? {
         // Try cached ID first (optimization - reduces node allocations)
         if (cachedUrlBarId != null && cachedUrlBarPackage == currentBrowserPackage) {
-            var nodes: List<AccessibilityNodeInfo>? = null
-            try {
-                nodes = rootNode.findAccessibilityNodeInfosByViewId(cachedUrlBarId!!)
-                if (!nodes.isNullOrEmpty()) {
-                    val text = nodes[0].text?.toString()
-                    // Accept any non-blank text that's not the placeholder
-                    if (!text.isNullOrBlank() && !isPlaceholderText(text)) {
-                        return text
-                    }
+            val nodes = rootNode.findAccessibilityNodeInfosByViewId(cachedUrlBarId!!)
+            if (!nodes.isNullOrEmpty()) {
+                val text = nodes[0].text?.toString()
+                // Accept any non-blank text that's not the placeholder
+                if (!text.isNullOrBlank() && !isPlaceholderText(text)) {
+                    return text
                 }
-            } finally {
-                nodes?.forEach { it.recycle() }
             }
         }
 
@@ -371,22 +360,17 @@ class UrlBlockerAccessibilityService : AccessibilityService() {
             // Only try IDs that match current browser package
             if (!fullId.startsWith(currentBrowserPackage ?: "")) continue
 
-            var nodes: List<AccessibilityNodeInfo>? = null
-            try {
-                nodes = rootNode.findAccessibilityNodeInfosByViewId(fullId)
-                if (!nodes.isNullOrEmpty()) {
-                    val text = nodes[0].text?.toString()
-                    // Accept any non-blank text that's not the placeholder
-                    if (!text.isNullOrBlank() && !isPlaceholderText(text)) {
-                        // Cache successful ID
-                        cachedUrlBarId = fullId
-                        cachedUrlBarPackage = currentBrowserPackage
-                        Log.d(TAG, "Found URL in bar: $text")
-                        return text
-                    }
+            val nodes = rootNode.findAccessibilityNodeInfosByViewId(fullId)
+            if (!nodes.isNullOrEmpty()) {
+                val text = nodes[0].text?.toString()
+                // Accept any non-blank text that's not the placeholder
+                if (!text.isNullOrBlank() && !isPlaceholderText(text)) {
+                    // Cache successful ID
+                    cachedUrlBarId = fullId
+                    cachedUrlBarPackage = currentBrowserPackage
+                    Log.d(TAG, "Found URL in bar: $text")
+                    return text
                 }
-            } finally {
-                nodes?.forEach { it.recycle() }
             }
         }
         return null
@@ -420,15 +404,10 @@ class UrlBlockerAccessibilityService : AccessibilityService() {
         }
 
         for (i in 0 until node.childCount) {
-            var child: AccessibilityNodeInfo? = null
-            try {
-                child = node.getChild(i)
-                if (child != null) {
-                    val result = findUrlInEditTexts(child, depth + 1)
-                    if (result != null) return result
-                }
-            } finally {
-                child?.recycle()
+            val child = node.getChild(i)
+            if (child != null) {
+                val result = findUrlInEditTexts(child, depth + 1)
+                if (result != null) return result
             }
         }
 

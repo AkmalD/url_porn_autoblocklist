@@ -1,7 +1,9 @@
 package com.lawanpmo.autoblocklist.presentation.ui.home
 
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.os.Bundle
 import android.provider.Settings
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
@@ -372,8 +374,29 @@ private fun isAccessibilityServiceEnabled(context: Context): Boolean {
 }
 
 private fun openAccessibilitySettings(context: Context) {
-    val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
-        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+    // Try to open directly to this app's accessibility service settings
+    val componentName = ComponentName(
+        context.packageName,
+        UrlBlockerAccessibilityService::class.java.name
+    )
+
+    try {
+        // Method 1: Try to open specific service settings (works on many devices)
+        val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+
+            // Add fragment arguments to highlight/open this specific service
+            val bundle = Bundle()
+            bundle.putString(":settings:fragment_args_key", componentName.flattenToString())
+            putExtra(":settings:show_fragment_args", bundle)
+            putExtra(":settings:fragment_args_key", componentName.flattenToString())
+        }
+        context.startActivity(intent)
+    } catch (e: Exception) {
+        // Fallback: Open general accessibility settings
+        val fallbackIntent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        }
+        context.startActivity(fallbackIntent)
     }
-    context.startActivity(intent)
 }

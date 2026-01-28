@@ -7,12 +7,12 @@ plugins {
 
 android {
     namespace = "com.lawanpmo.autoblocklist"
-    compileSdk = 34
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.lawanpmo.autoblocklist"
         minSdk = 26
-        targetSdk = 34
+        targetSdk = 35
         versionCode = 1
         versionName = "1.0.0"
 
@@ -58,10 +58,6 @@ android {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
-        // Fix 16KB page alignment for Android 16+ devices
-        jniLibs {
-            useLegacyPackaging = true
-        }
     }
 }
 
@@ -80,13 +76,13 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0")
 
-    // Hilt
-    implementation("com.google.dagger:hilt-android:2.50")
-    ksp("com.google.dagger:hilt-compiler:2.50")
+    // Hilt (2.54 fixes deprecated API warnings)
+    implementation("com.google.dagger:hilt-android:2.54")
+    ksp("com.google.dagger:hilt-compiler:2.54")
     implementation("androidx.hilt:hilt-navigation-compose:1.1.0")
 
-    // TensorFlow Lite
-    implementation("org.tensorflow:tensorflow-lite:2.14.0")
+    // LiteRT (formerly TensorFlow Lite) - 16KB page aligned for Android 15+
+    implementation("com.google.ai.edge.litert:litert:1.4.1")
 
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
