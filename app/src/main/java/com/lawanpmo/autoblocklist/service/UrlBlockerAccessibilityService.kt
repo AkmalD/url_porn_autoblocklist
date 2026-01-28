@@ -249,17 +249,16 @@ class UrlBlockerAccessibilityService : AccessibilityService() {
         if (url == lastDetectedUrl) return
 
         lastDetectedUrl = url
+        Log.d(TAG, "URL detected: $url")
         processUrl(url)
     }
 
     private fun checkUrlInBrowserForced() {
         val url = extractUrlFromBrowser() ?: return
         lastDetectedUrl = url
+        Log.d(TAG, "URL detected (forced): $url")
         processUrl(url)
     }
-
-    // Track last classification score for overlay
-    private var lastClassificationScore: Float = 0f
 
     private fun processUrl(url: String) {
         if (!isClassifierReady) {
@@ -272,38 +271,36 @@ class UrlBlockerAccessibilityService : AccessibilityService() {
 
         if (result.isAdult) {
             Log.w(TAG, "Adult content detected: $url (score=${result.score})")
-            lastClassificationScore = result.score
-            scheduleBlock(url, result.score)
+            scheduleBlock(url)
         }
     }
 
-    private fun scheduleBlock(domain: String, score: Float) {
+    private fun scheduleBlock(domain: String) {
         pendingBlockJob?.cancel()
         pendingBlockJob = serviceScope.launch {
             Log.d(TAG, "Scheduling block for: $domain")
             delay(BLOCK_DELAY_MS)
-            executeBlock(domain, score)
+            executeBlock(domain)
         }
     }
 
-    private fun executeBlock(domain: String, score: Float) {
+    private fun executeBlock(domain: String) {
         Log.d(TAG, "Executing block for: $domain")
 
-        // Go to home screen
+        // Go to home screen FIRST to close browser
         performGlobalAction(GLOBAL_ACTION_HOME)
 
-        // Show overlay activity after small delay
+        // Show overlay activity after small delay (same as LawanPMO)
         serviceScope.launch {
             delay(100)
-            showBlockOverlay(domain, score)
+            showBlockOverlay(domain)
         }
     }
 
-    private fun showBlockOverlay(domain: String, score: Float) {
+    private fun showBlockOverlay(domain: String) {
         try {
             val intent = Intent(this, BlockOverlayActivity::class.java).apply {
                 putExtra(BlockOverlayActivity.EXTRA_BLOCKED_DOMAIN, domain)
-                putExtra(BlockOverlayActivity.EXTRA_ML_SCORE, score)
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
             }
             startActivity(intent)
@@ -329,6 +326,10 @@ class UrlBlockerAccessibilityService : AccessibilityService() {
      * Find URL using known address bar view IDs.
      * This is more accurate than tree traversal as it targets the actual URL bar,
      * not autocomplete suggestions or other EditText fields.
+     *
+     * NOTE: Unlike findUrlInEditTexts(), this does NOT require a dot in the text.
+     * The URL bar is a trusted source - if text is there, it's being typed by user.
+     * This enables character-by-character detection (e.g., "king" → "kingbo" → "kingbokep").
      */
     private fun findUrlDirectly(rootNode: AccessibilityNodeInfo): String? {
         // Try cached ID first (optimization - reduces node allocations)
@@ -338,8 +339,10 @@ class UrlBlockerAccessibilityService : AccessibilityService() {
                 nodes = rootNode.findAccessibilityNodeInfosByViewId(cachedUrlBarId!!)
                 if (!nodes.isNullOrEmpty()) {
                     val text = nodes[0].text?.toString()
-                    Log.d(TAG, "Cached urlBarId ($cachedUrlBarId) text: $text")
-                    if (isValidUrl(text)) return text
+                    // Accept any non-blank text that's not the placeholder
+                    if (!text.isNullOrBlank() && !isPlaceholderText(text)) {
+                        return text
+                    }
                 }
             } finally {
                 nodes?.forEach { it.recycle() }
@@ -356,12 +359,12 @@ class UrlBlockerAccessibilityService : AccessibilityService() {
                 nodes = rootNode.findAccessibilityNodeInfosByViewId(fullId)
                 if (!nodes.isNullOrEmpty()) {
                     val text = nodes[0].text?.toString()
-                    Log.d(TAG, "Trying urlBarId ($fullId) text: $text")
-                    if (isValidUrl(text)) {
+                    // Accept any non-blank text that's not the placeholder
+                    if (!text.isNullOrBlank() && !isPlaceholderText(text)) {
                         // Cache successful ID
                         cachedUrlBarId = fullId
                         cachedUrlBarPackage = currentBrowserPackage
-                        Log.d(TAG, "Found valid URL via direct lookup: $text")
+                        Log.d(TAG, "Found URL in bar: $text")
                         return text
                     }
                 }
@@ -369,8 +372,20 @@ class UrlBlockerAccessibilityService : AccessibilityService() {
                 nodes?.forEach { it.recycle() }
             }
         }
-        Log.d(TAG, "Direct lookup failed, falling back to tree traversal")
         return null
+    }
+
+    /**
+     * Check if text is a browser placeholder (not actual user input).
+     */
+    private fun isPlaceholderText(text: String): Boolean {
+        val lowerText = text.lowercase()
+        return lowerText.contains("search") ||
+               lowerText.contains("ketik") ||
+               lowerText.contains("type url") ||
+               lowerText.contains("cari") ||
+               lowerText.contains("telusuri") ||
+               lowerText == "null"
     }
 
     /**

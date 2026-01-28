@@ -33,9 +33,10 @@
         <activity
             android:name=".presentation.ui.BlockOverlayActivity"
             android:exported="false"
+            android:theme="@style/Theme.URLAutoBlocklist"
             android:excludeFromRecents="true"
-            android:launchMode="singleTop"
-            android:theme="@style/Theme.URLAutoBlocklist" />
+            android:taskAffinity=""
+            android:launchMode="singleInstance" />
 
         <!-- Accessibility Service for URL Detection -->
         <service

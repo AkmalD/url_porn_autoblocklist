@@ -34,12 +34,13 @@ import com.lawanpmo.autoblocklist.presentation.ui.theme.AutoBlocklistTheme
  * - Takes focus properly
  * - Handles back button to go HOME (not back to blocked site)
  * - Better visual design with Compose
+ *
+ * Design matches LawanPMO Premium's OverlayActivity for consistency.
  */
 class BlockOverlayActivity : ComponentActivity() {
 
     companion object {
         const val EXTRA_BLOCKED_DOMAIN = "blocked_domain"
-        const val EXTRA_ML_SCORE = "ml_score"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -47,7 +48,6 @@ class BlockOverlayActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         val blockedDomain = intent.getStringExtra(EXTRA_BLOCKED_DOMAIN) ?: "Unknown"
-        val mlScore = intent.getFloatExtra(EXTRA_ML_SCORE, 0f)
 
         setContent {
             AutoBlocklistTheme {
@@ -72,8 +72,8 @@ class BlockOverlayActivity : ComponentActivity() {
                         Spacer(modifier = Modifier.height(32.dp))
 
                         Text(
-                            text = "SITUS DIBLOKIR",
-                            style = MaterialTheme.typography.displaySmall,
+                            text = "HAYOLOH MAU NGAPAIN?",
+                            style = MaterialTheme.typography.displayMedium,
                             fontWeight = FontWeight.Black,
                             textAlign = TextAlign.Center,
                             color = MaterialTheme.colorScheme.error
@@ -82,8 +82,8 @@ class BlockOverlayActivity : ComponentActivity() {
                         Spacer(modifier = Modifier.height(16.dp))
 
                         Text(
-                            text = "Konten dewasa terdeteksi oleh ML.\nSitus ini tidak dapat diakses.",
-                            style = MaterialTheme.typography.titleMedium,
+                            text = "Aplikasi ini diblokir oleh orang tua kamu.\nJangan nakal ya!",
+                            style = MaterialTheme.typography.headlineSmall,
                             textAlign = TextAlign.Center,
                             color = MaterialTheme.colorScheme.onErrorContainer
                         )
@@ -91,20 +91,10 @@ class BlockOverlayActivity : ComponentActivity() {
                         Spacer(modifier = Modifier.height(8.dp))
 
                         Text(
-                            text = blockedDomain,
-                            style = MaterialTheme.typography.bodyLarge,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.error
+                            text = "(Browser ($blockedDomain))",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-
-                        if (mlScore > 0f) {
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = "Skor ML: ${String.format("%.1f", mlScore * 100)}%",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.7f)
-                            )
-                        }
 
                         Spacer(modifier = Modifier.height(48.dp))
 
@@ -118,7 +108,7 @@ class BlockOverlayActivity : ComponentActivity() {
                                 .height(56.dp)
                         ) {
                             Text(
-                                text = "KEMBALI KE HOME",
+                                text = "KEMBALI KE JALAN YANG BENAR",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold
                             )
