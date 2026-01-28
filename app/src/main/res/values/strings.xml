@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">URL AutoBlocklist</string>
+    <string name="accessibility_service_description">Layanan ini memantau URL di browser untuk mendeteksi dan memblokir konten dewasa secara otomatis menggunakan machine learning.</string>
+
+    <!-- Landing Page -->
+    <string name="welcome_title">URL AutoBlocklist</string>
+    <string name="welcome_subtitle">Proteksi Otomatis dari Konten Dewasa</string>
+    <string name="welcome_description">Aplikasi ini menggunakan machine learning untuk mendeteksi dan memblokir situs dewasa secara real-time saat Anda browsing.</string>
+
+    <!-- Features -->
+    <string name="feature_ml_title">Deteksi ML</string>
+    <string name="feature_ml_desc">Model CNN mendeteksi pola domain berbahaya</string>
+    <string name="feature_realtime_title">Real-time</string>
+    <string name="feature_realtime_desc">Blokir sebelum konten dimuat</string>
+    <string name="feature_privacy_title">Privasi</string>
+    <string name="feature_privacy_desc">Semua proses offline di perangkat</string>
+
+    <!-- Buttons -->
+    <string name="btn_activate">Aktifkan Proteksi</string>
+    <string name="btn_settings">Buka Pengaturan Aksesibilitas</string>
+    <string name="btn_check_status">Cek Status</string>
+
+    <!-- Status -->
+    <string name="status_active">Proteksi Aktif</string>
+    <string name="status_inactive">Proteksi Tidak Aktif</string>
+    <string name="status_description_active">Layanan sedang memantau browser Anda</string>
+    <string name="status_description_inactive">Aktifkan layanan aksesibilitas untuk mulai</string>
+</resources>

@@ -1,0 +1,19 @@
+# .env
+*.env
+!.env.example
+
+# Binary
+server.exe
+/server
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+firebase-service-account.json
+
+app-backend
