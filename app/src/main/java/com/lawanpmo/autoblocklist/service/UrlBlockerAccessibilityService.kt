@@ -32,7 +32,7 @@ class UrlBlockerAccessibilityService : AccessibilityService() {
         private const val TAG = "UrlBlockerService"
         private const val MODEL_PATH = "url_classifier.tflite"
         private const val URL_CHECK_THROTTLE_MS = 300L
-        private const val BLOCK_DELAY_MS = 1500L
+        private const val BLOCK_DELAY_MS = 1000L
         private const val CONTINUOUS_MONITOR_INTERVAL_MS = 1000L // Check every 1 second while in browser
     }
 

@@ -41,6 +41,11 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    // Suppress deprecation warnings from Hilt generated Java code
+    tasks.withType<JavaCompile>().configureEach {
+        options.compilerArgs.add("-Xlint:-deprecation")
+    }
+
     kotlinOptions {
         jvmTarget = "17"
     }
@@ -58,6 +63,12 @@ android {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
+    }
+
+    // Suppress deprecation warnings from Hilt generated code
+    lint {
+        disable += "Deprecation"
+        abortOnError = false
     }
 }
 

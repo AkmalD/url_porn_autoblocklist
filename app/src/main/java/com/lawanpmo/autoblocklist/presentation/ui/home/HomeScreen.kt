@@ -1,9 +1,7 @@
 package com.lawanpmo.autoblocklist.presentation.ui.home
 
-import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.os.Bundle
 import android.provider.Settings
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
@@ -161,6 +159,16 @@ fun HomeScreen() {
                         fontWeight = FontWeight.SemiBold
                     )
                 }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Guide text for Samsung users
+                Text(
+                    text = "Pilih \"Installed apps\" > \"URL AutoBlocklist\" > Aktifkan",
+                    style = MaterialTheme.typography.bodySmall,
+                    textAlign = TextAlign.Center,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             } else {
                 OutlinedButton(
                     onClick = {
@@ -374,29 +382,14 @@ private fun isAccessibilityServiceEnabled(context: Context): Boolean {
 }
 
 private fun openAccessibilitySettings(context: Context) {
-    // Try to open directly to this app's accessibility service settings
-    val componentName = ComponentName(
-        context.packageName,
-        UrlBlockerAccessibilityService::class.java.name
-    )
-
+    // Open accessibility settings
+    // Note: Samsung OneUI doesn't support opening specific service detail page programmatically
+    // User needs to tap: "Installed apps" > "URL AutoBlocklist"
     try {
-        // Method 1: Try to open specific service settings (works on many devices)
-        val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+        context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK
-
-            // Add fragment arguments to highlight/open this specific service
-            val bundle = Bundle()
-            bundle.putString(":settings:fragment_args_key", componentName.flattenToString())
-            putExtra(":settings:show_fragment_args", bundle)
-            putExtra(":settings:fragment_args_key", componentName.flattenToString())
-        }
-        context.startActivity(intent)
+        })
     } catch (e: Exception) {
-        // Fallback: Open general accessibility settings
-        val fallbackIntent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK
-        }
-        context.startActivity(fallbackIntent)
+        // Ignore
     }
 }
