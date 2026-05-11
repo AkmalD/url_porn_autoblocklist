@@ -12,6 +12,11 @@ val Teal500 = Color(0xFF26A69A)
 val Teal700 = Color(0xFF00897B)
 val Teal200 = Color(0xFF80CBC4)
 
+// Tertiary (Random Forest)
+val Purple500 = Color(0xFF9C27B0)
+val Purple700 = Color(0xFF7B1FA2)
+val Purple200 = Color(0xFFCE93D8)
+
 // Status
 val Green500 = Color(0xFF4CAF50)
 val Red500 = Color(0xFFF44336)

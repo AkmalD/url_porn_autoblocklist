@@ -6,8 +6,13 @@ import android.content.Intent
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
-import com.lawanpmo.autoblocklist.data.classifier.UrlClassifier
+import com.lawanpmo.autoblocklist.data.classifier.ClassifierManager
+import com.lawanpmo.autoblocklist.data.model.BlockedDomainRecord
+import com.lawanpmo.autoblocklist.data.model.MLModelType
+import com.lawanpmo.autoblocklist.data.preference.ModelPreference
+import com.lawanpmo.autoblocklist.data.repository.BlocklistRepository
 import com.lawanpmo.autoblocklist.presentation.ui.BlockOverlayActivity
+import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -16,6 +21,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import javax.inject.Inject
 
 /**
  * Accessibility Service for detecting and blocking adult URLs in browsers.
@@ -23,25 +29,38 @@ import kotlinx.coroutines.launch
  * Detection flow:
  * 1. Monitor browser URL bar for changes
  * 2. Extract domain name from URL
- * 3. Run ML classification
+ * 3. Run ML classification with current model
  * 4. Block if adult content detected (score > 0.7)
  */
+@AndroidEntryPoint
 class UrlBlockerAccessibilityService : AccessibilityService() {
 
     companion object {
         private const val TAG = "UrlBlockerService"
-        private const val MODEL_PATH = "url_classifier.tflite"
         private const val URL_CHECK_THROTTLE_MS = 300L
         private const val BLOCK_DELAY_MS = 1000L
         private const val CONTINUOUS_MONITOR_INTERVAL_MS = 1000L // Check every 1 second while in browser
     }
 
+    // ML Classifier Manager - injected via Hilt
+    @Inject
+    lateinit var classifierManager: ClassifierManager
+
+    // Model Preference - injected via Hilt
+    @Inject
+    lateinit var modelPreference: ModelPreference
+
+    // Blocklist Repository - injected via Hilt
+    @Inject
+    lateinit var blocklistRepository: BlocklistRepository
+
     // Coroutine scope for async operations
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
-    // ML Classifier
-    private lateinit var urlClassifier: UrlClassifier
+    // State
     private var isClassifierReady = false
+    private var currentActiveModel: MLModelType = MLModelType.CNN_1D
+    private var preferenceCheckJob: Job? = null
 
     // Supported browsers
     private val browserPackages = setOf(
@@ -125,7 +144,9 @@ class UrlBlockerAccessibilityService : AccessibilityService() {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
-        Log.d(TAG, "Service connected")
+        Log.d(TAG, "═══════════════════════════════════════════")
+        Log.d(TAG, "Accessibility Service Connected")
+        Log.d(TAG, "═══════════════════════════════════════════")
 
         // Configure service
         serviceInfo = serviceInfo.apply {
@@ -139,11 +160,41 @@ class UrlBlockerAccessibilityService : AccessibilityService() {
             notificationTimeout = 100
         }
 
-        // Load ML model
-        urlClassifier = UrlClassifier(applicationContext)
+        // Load model based on preference
         serviceScope.launch {
-            isClassifierReady = urlClassifier.loadModel(MODEL_PATH)
-            Log.d(TAG, "ML Classifier ready: $isClassifierReady")
+            val preferredModel = modelPreference.getSelectedModel()
+            Log.i(TAG, "Loading preferred model: ${preferredModel.name}")
+            
+            isClassifierReady = classifierManager.switchModel(preferredModel)
+            currentActiveModel = preferredModel
+            Log.i(TAG, "Classifier ready: $isClassifierReady with model: ${currentActiveModel.name}")
+            
+            // Start observing preference changes
+            startPreferenceObserver()
+        }
+    }
+
+    /**
+     * Start observing preference changes
+     * Check every 2 seconds if user selected different model
+     */
+    private fun startPreferenceObserver() {
+        preferenceCheckJob?.cancel()
+        preferenceCheckJob = serviceScope.launch {
+            while (isActive) {
+                try {
+                    val savedModel = modelPreference.getSelectedModel()
+                    if (savedModel != currentActiveModel) {
+                        Log.w(TAG, "Model preference changed: ${currentActiveModel.name} → ${savedModel.name}")
+                        classifierManager.switchModel(savedModel)
+                        currentActiveModel = savedModel
+                        Log.i(TAG, "✅ Model auto-switched based on preference")
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error checking model preference", e)
+                }
+                delay(2000) // Check every 2 seconds
+            }
         }
     }
 
@@ -267,11 +318,20 @@ class UrlBlockerAccessibilityService : AccessibilityService() {
             return
         }
 
-        val result = urlClassifier.classify(url)
-        Log.d(TAG, "URL: $url -> score=${result.score}, isAdult=${result.isAdult}")
+        val result = classifierManager.classify(url)
 
         if (result.isAdult) {
-            Log.w(TAG, "Adult content detected: $url (score=${result.score})")
+            Log.w(TAG, "⚠️ Adult content detected: $url (score=${"%.4f".format(result.score)})")
+            
+            // Save to history
+            val record = BlockedDomainRecord(
+                domain = result.domain,
+                detectionTimeMs = result.inferenceTimeMs,
+                modelUsed = currentActiveModel.name,
+                score = result.score
+            )
+            blocklistRepository.addBlockedDomain(record)
+            
             scheduleBlock(url)
         } else {
             // URL is safe - cancel any pending block
@@ -433,6 +493,27 @@ class UrlBlockerAccessibilityService : AccessibilityService() {
         return packageName in systemUiPackages
     }
 
+    /**
+     * Switch to different ML model.
+     * Called from HomeScreen when user selects different model.
+     * This is a suspend function - call it from a coroutine.
+     */
+    suspend fun switchClassificationModel(modelType: MLModelType): Boolean {
+        return try {
+            val success = classifierManager.switchModel(modelType)
+            if (success) {
+                isClassifierReady = true
+                Log.i(TAG, "✅ Model switched successfully in service")
+            } else {
+                Log.e(TAG, "❌ Failed to switch model in service")
+            }
+            success
+        } catch (e: Exception) {
+            Log.e(TAG, "❌ Error switching model in service", e)
+            false
+        }
+    }
+
     override fun onInterrupt() {
         Log.d(TAG, "Service interrupted")
     }
@@ -441,7 +522,8 @@ class UrlBlockerAccessibilityService : AccessibilityService() {
         super.onDestroy()
         Log.d(TAG, "Service destroyed")
         stopContinuousMonitoring()
-        urlClassifier.release()
+        preferenceCheckJob?.cancel()
+        classifierManager.release()
         serviceScope.cancel()
     }
 }
