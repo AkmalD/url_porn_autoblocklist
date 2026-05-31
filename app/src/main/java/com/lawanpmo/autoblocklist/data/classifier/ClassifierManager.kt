@@ -21,12 +21,13 @@ class ClassifierManager @Inject constructor(
 
     private var currentModelType: MLModelType = MLModelType.CNN_1D
     private var currentClassifier: IUrlClassifier = cnnClassifier
+    private var isInitialized = false
 
     /**
      * Switch ke model yang berbeda
      */
     suspend fun switchModel(modelType: MLModelType): Boolean {
-        if (currentModelType == modelType) {
+        if (currentModelType == modelType && isInitialized) {
             Log.i(TAG, "═══════════════════════════════════════════")
             Log.i(TAG, "Already using model: ${modelType.name}")
             Log.i(TAG, "═══════════════════════════════════════════")
@@ -59,6 +60,7 @@ class ClassifierManager @Inject constructor(
 
             currentModelType = modelType
             currentClassifier = newClassifier
+            isInitialized = true
             Log.i(TAG, "✅ Successfully switched to: ${modelType.name}")
             Log.i(TAG, "═══════════════════════════════════════════")
             true

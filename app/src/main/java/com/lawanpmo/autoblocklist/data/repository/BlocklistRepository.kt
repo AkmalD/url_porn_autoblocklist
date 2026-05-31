@@ -94,15 +94,11 @@ class BlocklistRepository @Inject constructor(
         val randomForestCount = records.count { it.modelUsed.contains("RANDOM", ignoreCase = true) }
         val mostRecentBlockedAt = records.firstOrNull()?.timestamp ?: 0
         
-        // Calculate accuracy from confirmed records
-        val confirmedRecords = records.filter { it.userConfirmed }
-        val confirmedBlockedCount = confirmedRecords.size
-        val calculatedAccuracy = if (confirmedRecords.isNotEmpty()) {
-            // For now, if user confirmed it was blocked correctly, count as accurate
-            (confirmedBlockedCount.toDouble() / totalBlocked.toDouble()) * 100
-        } else {
-            0.0
-        }
+        // Calculate accuracy from average confidence score of all records
+        // Score is between 0.0 (not adult) to 1.0 (definitely adult)
+        // For blocked records, we convert to percentage: score * 100
+        val avgScore = records.map { it.score }.average()
+        val calculatedAccuracy = avgScore * 100.0  // Convert to percentage
 
         return BlocklistStatistics(
             totalBlocked = totalBlocked,
@@ -112,7 +108,7 @@ class BlocklistRepository @Inject constructor(
             randomForestCount = randomForestCount,
             mostRecentBlockedAt = mostRecentBlockedAt,
             calculatedAccuracy = calculatedAccuracy,
-            confirmedBlockedCount = confirmedBlockedCount
+            confirmedBlockedCount = totalBlocked
         )
     }
 
@@ -151,5 +147,40 @@ class BlocklistRepository @Inject constructor(
      */
     fun getUniqueBlockedDomains(): List<String> {
         return getAllBlockedDomains().map { it.domain }.distinct()
+    }
+
+    /**
+     * Calculate statistics for a specific model
+     */
+    fun getStatisticsByModel(modelType: String): BlocklistStatistics {
+        val records = getAllBlockedDomains().filter { 
+            it.modelUsed.contains(modelType, ignoreCase = true) 
+        }
+        
+        if (records.isEmpty()) {
+            return BlocklistStatistics.empty()
+        }
+
+        val totalBlocked = records.size
+        val avgDetectionTimeMs = records.map { it.detectionTimeMs }.average()
+        val blockedDomainsUnique = records.map { it.domain }.distinct().size
+        val cnn1dCount = records.count { it.modelUsed.contains("CNN", ignoreCase = true) }
+        val randomForestCount = records.count { it.modelUsed.contains("RANDOM", ignoreCase = true) }
+        val mostRecentBlockedAt = records.firstOrNull()?.timestamp ?: 0
+        
+        // Calculate accuracy from average confidence score of records from this model
+        val avgScore = records.map { it.score }.average()
+        val calculatedAccuracy = avgScore * 100.0
+
+        return BlocklistStatistics(
+            totalBlocked = totalBlocked,
+            avgDetectionTimeMs = avgDetectionTimeMs,
+            blockedDomainsUnique = blockedDomainsUnique,
+            cnn1dCount = cnn1dCount,
+            randomForestCount = randomForestCount,
+            mostRecentBlockedAt = mostRecentBlockedAt,
+            calculatedAccuracy = calculatedAccuracy,
+            confirmedBlockedCount = totalBlocked
+        )
     }
 }

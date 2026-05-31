@@ -320,6 +320,13 @@ class UrlBlockerAccessibilityService : AccessibilityService() {
 
         val result = classifierManager.classify(url)
 
+        // Skip if not a valid domain (e.g., search query)
+        if (result.skipped) {
+            Log.d(TAG, "⏭️ Skipped (not a valid domain): $url")
+            cancelPendingBlock()
+            return
+        }
+
         if (result.isAdult) {
             Log.w(TAG, "⚠️ Adult content detected: $url (score=${"%.4f".format(result.score)})")
             

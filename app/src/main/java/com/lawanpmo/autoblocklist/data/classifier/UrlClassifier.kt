@@ -119,6 +119,19 @@ class UrlClassifier @Inject constructor(
 
         return try {
             val fullDomain = normalizeDomain(url)
+            
+            // Validate if input is a real domain (not a search query)
+            if (!isDomainValid(fullDomain)) {
+                Log.d(TAG, "⏭️  Skipped '$fullDomain' - not a valid domain (search query?)")
+                return UrlClassificationResult(
+                    score = 0.0f,
+                    isAdult = false,
+                    inferenceTimeMs = System.currentTimeMillis() - startTime,
+                    domain = fullDomain,
+                    skipped = true
+                )
+            }
+            
             val domainName = extractMainDomainName(fullDomain)
 
             Log.d(TAG, "Domain extraction: '$fullDomain' → '$domainName'")
@@ -146,6 +159,61 @@ class UrlClassifier @Inject constructor(
             Log.e(TAG, "Classification error for: $url", e)
             UrlClassificationResult.error(normalizeDomain(url))
         }
+    }
+
+    /**
+     * Validate if input is a real domain (not a search query)
+     * Valid domains must:
+     * 1. Have at least one dot (.) - e.g., example.com
+     * 2. Have a valid TLD - .com, .org, .xxx, etc.
+     * 3. Not be a search query (spaces, multiple words, etc.)
+     */
+    private fun isDomainValid(domain: String): Boolean {
+        // No spaces allowed - search queries typically have spaces
+        if (domain.contains(" ")) {
+            Log.d(TAG, "   ❌ Invalid: contains spaces (likely search query)")
+            return false
+        }
+
+        // Must have at least one dot
+        if (!domain.contains(".")) {
+            Log.d(TAG, "   ❌ Invalid: no dot found (likely search term, not domain)")
+            return false
+        }
+
+        val parts = domain.split(".")
+        
+        // Domain should have at least 2 parts (name.tld)
+        if (parts.size < 2) {
+            Log.d(TAG, "   ❌ Invalid: domain has less than 2 parts")
+            return false
+        }
+
+        // Check if last part (TLD) is valid
+        val tld = parts.last().lowercase()
+        if (tld.isEmpty() || tld.length > 6) {
+            Log.d(TAG, "   ❌ Invalid: TLD invalid length ($tld)")
+            return false
+        }
+
+        // Check if it has a valid TLD
+        if (parts.size >= 3) {
+            // Check second-level TLDs first (e.g., co.uk, com.au)
+            val potentialSecondLevelTld = "${parts[parts.size - 2]}.${tld}"
+            if (potentialSecondLevelTld in SECOND_LEVEL_TLDS) {
+                Log.d(TAG, "   ✅ Valid: second-level TLD ($potentialSecondLevelTld)")
+                return true
+            }
+        }
+
+        // Check single-level TLDs
+        if (tld in COMMON_TLDS) {
+            Log.d(TAG, "   ✅ Valid: TLD found ($tld)")
+            return true
+        }
+
+        Log.d(TAG, "   ❌ Invalid: TLD not recognized ($tld)")
+        return false
     }
 
     private fun normalizeDomain(url: String): String {

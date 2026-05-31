@@ -7,14 +7,16 @@ data class UrlClassificationResult(
     val score: Float,
     val isAdult: Boolean,
     val inferenceTimeMs: Long,
-    val domain: String
+    val domain: String,
+    val skipped: Boolean = false  // True if input was skipped (not a valid domain)
 ) {
     companion object {
         fun error(domain: String) = UrlClassificationResult(
             score = 0f,
             isAdult = false,
             inferenceTimeMs = 0,
-            domain = domain
+            domain = domain,
+            skipped = false
         )
     }
 }

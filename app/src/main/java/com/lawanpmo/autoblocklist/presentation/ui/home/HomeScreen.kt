@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -22,6 +23,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Lock
@@ -32,6 +35,7 @@ import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -41,12 +45,14 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.AlertDialog
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -81,6 +87,7 @@ fun HomeScreen(
     var selectedModel by remember { mutableStateOf(MLModelType.CNN_1D) }
     var blockedHistory by remember { mutableStateOf(emptyList<com.lawanpmo.autoblocklist.data.model.BlockedDomainRecord>()) }
     var blocklistStats by remember { mutableStateOf(com.lawanpmo.autoblocklist.data.model.BlocklistStatistics.empty()) }
+    var showHistoryModal by remember { mutableStateOf(false) }
 
     // Check service status on resume
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -91,8 +98,8 @@ fun HomeScreen(
                 
                 // Refresh blocked history
                 blocklistRepository?.let {
-                    blockedHistory = it.getRecentBlockedDomains(10)
-                    blocklistStats = it.getStatistics()
+                    blockedHistory = it.getAllBlockedDomains()
+                    blocklistStats = it.getStatisticsByModel(selectedModel.name)
                 }
             }
         }
@@ -100,6 +107,23 @@ fun HomeScreen(
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
         }
+    }
+
+    // Update statistics when selected model changes
+    LaunchedEffect(selectedModel) {
+        blocklistRepository?.let {
+            blocklistStats = it.getStatisticsByModel(selectedModel.name)
+        }
+    }
+
+    // Show history modal when opened
+    if (showHistoryModal && blocklistRepository != null) {
+        HistoryModal(
+            allBlockedRecords = blockedHistory.filter { 
+                it.modelUsed.contains(selectedModel.name, ignoreCase = true) 
+            },
+            onDismiss = { showHistoryModal = false }
+        )
     }
 
     Column(
@@ -166,16 +190,21 @@ fun HomeScreen(
             ModelStatsCard(
                 model = MLModels.getByType(selectedModel),
                 accentColor = if (selectedModel == MLModelType.CNN_1D) 
-                    MaterialTheme.colorScheme.primary else Purple500
+                    MaterialTheme.colorScheme.primary else Purple500,
+                isServiceEnabled = isServiceEnabled,
+                accuracy = blocklistStats.calculatedAccuracy,
+                avgDetectionTimeMs = blocklistStats.avgDetectionTimeMs
             )
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Blocked Domains History & Calculated Statistics
-            if (blocklistRepository != null) {
-                BlockedDomainsHistoryCard(
-                    stats = blocklistStats,
-                    recentBlocked = blockedHistory
+            // Blocked Domains History Button
+            if (blocklistRepository != null && blocklistStats.totalBlocked > 0) {
+                HistoryButtonCard(
+                    uniqueDomainCount = blocklistStats.blockedDomainsUnique,
+                    totalDetections = blocklistStats.totalBlocked,
+                    selectedModelName = selectedModel.name,
+                    onClick = { showHistoryModal = true }
                 )
 
                 Spacer(modifier = Modifier.height(24.dp))
@@ -358,7 +387,10 @@ private fun ModelSelectorCard(
 @Composable
 private fun ModelStatsCard(
     model: com.lawanpmo.autoblocklist.data.model.MLModelStats,
-    accentColor: Color
+    accentColor: Color,
+    isServiceEnabled: Boolean,
+    accuracy: Double,
+    avgDetectionTimeMs: Double
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -373,7 +405,7 @@ private fun ModelStatsCard(
                 .fillMaxWidth()
                 .padding(20.dp)
         ) {
-            // Header with Active Badge
+            // Header with Active Badge (conditional)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
@@ -391,22 +423,24 @@ private fun ModelStatsCard(
                             color = accentColor
                         )
                         
-                        // Active Badge
-                        Box(
-                            modifier = Modifier
-                                .background(
-                                    accentColor.copy(alpha = 0.2f),
-                                    shape = RoundedCornerShape(4.dp)
+                        // Active Badge - Only show if service is enabled
+                        if (isServiceEnabled) {
+                            Box(
+                                modifier = Modifier
+                                    .background(
+                                        accentColor.copy(alpha = 0.2f),
+                                        shape = RoundedCornerShape(4.dp)
+                                    )
+                                    .padding(horizontal = 8.dp, vertical = 2.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "✓ AKTIF",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = accentColor
                                 )
-                                .padding(horizontal = 8.dp, vertical = 2.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = "✓ AKTIF",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = accentColor
-                            )
+                            }
                         }
                     }
                     
@@ -421,40 +455,22 @@ private fun ModelStatsCard(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Stats Grid
+            // Stats Grid - Show only dynamic data
             Column(modifier = Modifier.fillMaxWidth()) {
-                // Accuracy
+                // Calculated Accuracy from average score
                 StatRow(
                     label = "Akurasi",
-                    value = "%.2f%%".format(model.accuracy),
+                    value = "%.1f%%".format(accuracy),
                     icon = Icons.Default.Psychology
                 )
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // Precision
+                // Average Detection Time
                 StatRow(
-                    label = "Presisi",
-                    value = "%.2f%%".format(model.precision),
-                    icon = Icons.Default.Security
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // Detection Time
-                StatRow(
-                    label = "Waktu Deteksi",
-                    value = "${model.detectionTimeMs}ms",
+                    label = "Rata-rata Waktu Deteksi",
+                    value = "%.1f ms".format(avgDetectionTimeMs),
                     icon = Icons.Default.Speed
-                )
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // Model Size
-                StatRow(
-                    label = "Ukuran Model",
-                    value = "${model.modelSizeKb}KB",
-                    icon = Icons.Default.Lock
                 )
             }
         }
@@ -500,188 +516,198 @@ private fun StatRow(
 }
 
 @Composable
-private fun BlockedDomainsHistoryCard(
-    stats: com.lawanpmo.autoblocklist.data.model.BlocklistStatistics,
-    recentBlocked: List<com.lawanpmo.autoblocklist.data.model.BlockedDomainRecord>
+private fun HistoryButtonCard(
+    uniqueDomainCount: Int,
+    totalDetections: Int,
+    selectedModelName: String,
+    onClick: () -> Unit
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
-            containerColor = Color(0xFFFFF3E0)  // Light orange background
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
         ),
-        border = BorderStroke(1.dp, Color(0xFFFFB74D))
+        border = BorderStroke(1.dp, Color(0xFFFF9800).copy(alpha = 0.5f))
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(20.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "📊 Riwayat Deteksi Situs ($selectedModelName)",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color(0xFFFF9800)
+                )
+                
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                Text(
+                    text = "$uniqueDomainCount domain unik • $totalDetections deteksi",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            
+            Icon(
+                imageVector = Icons.Default.Lock,
+                contentDescription = null,
+                modifier = Modifier.size(24.dp),
+                tint = Color(0xFFFF9800)
+            )
+        }
+    }
+}
+
+@Composable
+private fun HistoryModal(
+    allBlockedRecords: List<com.lawanpmo.autoblocklist.data.model.BlockedDomainRecord>,
+    onDismiss: () -> Unit
+) {
+    // Get unique domains
+    val uniqueDomains = allBlockedRecords.map { it.domain }.distinct()
+    val modelName = allBlockedRecords.firstOrNull()?.modelUsed ?: "Unknown"
+    
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            Button(
+                onClick = onDismiss,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFFFF9800)
+                )
+            ) {
+                Text("Tutup")
+            }
+        },
+        title = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = "Riwayat $modelName",
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Icon(
+                    imageVector = Icons.Default.Close,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .size(24.dp)
+                        .clickable(onClick = onDismiss),
+                    tint = MaterialTheme.colorScheme.onSurface
+                )
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                // Summary
+                Text(
+                    text = "Total Situs Diblokir: ${uniqueDomains.size}",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color(0xFFFF9800),
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
+                
+                Divider()
+                
+                // Scrollable list
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 400.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(allBlockedRecords) { record ->
+                        HistoryRecordItem(record)
+                    }
+                }
+            }
+        },
+        containerColor = MaterialTheme.colorScheme.surface,
+        textContentColor = MaterialTheme.colorScheme.onSurface
+    )
+}
+
+@Composable
+private fun HistoryRecordItem(record: com.lawanpmo.autoblocklist.data.model.BlockedDomainRecord) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.7f)
+        ),
+        border = BorderStroke(1.dp, Color(0xFFFF9800).copy(alpha = 0.3f))
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(20.dp)
+                .padding(12.dp)
         ) {
-            // Header
-            Text(
-                text = "📊 Riwayat Deteksi Situs",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold,
-                color = Color(0xFFE65100)
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Statistics
-            Column(modifier = Modifier.fillMaxWidth()) {
-                // Total Blocked
-                BlockedHistoryStatRow(
-                    label = "Total Terdeteksi",
-                    value = stats.totalBlocked.toString(),
-                    icon = Icons.Default.Warning
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // Unique Domains
-                BlockedHistoryStatRow(
-                    label = "Domain Unik",
-                    value = stats.blockedDomainsUnique.toString(),
-                    icon = Icons.Default.Shield
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // Avg Detection Time
-                BlockedHistoryStatRow(
-                    label = "Rata-rata Waktu Deteksi",
-                    value = "%.1f ms".format(stats.avgDetectionTimeMs),
-                    icon = Icons.Default.Speed
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // Calculated Accuracy
-                BlockedHistoryStatRow(
-                    label = "Akurasi Terhitung",
-                    value = "%.2f%%".format(stats.calculatedAccuracy),
-                    icon = Icons.Default.CheckCircle
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // Model Usage
-                BlockedHistoryStatRow(
-                    label = "Deteksi CNN-1D",
-                    value = "${stats.cnn1dCount}x",
-                    icon = Icons.Default.Psychology
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                BlockedHistoryStatRow(
-                    label = "Deteksi Random Forest",
-                    value = "${stats.randomForestCount}x",
-                    icon = Icons.Default.AutoAwesome
-                )
-            }
-
-            if (recentBlocked.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(16.dp))
-                Divider()
-                Spacer(modifier = Modifier.height(12.dp))
-
-                Text(
-                    text = "Situs Terakhir Diblokir",
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Color(0xFFE65100)
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // Recent blocked domains
-                recentBlocked.forEachIndexed { index, record ->
-                    if (index < 5) {  // Show only first 5
-                        RecentBlockedItem(record)
-                        if (index < minOf(4, recentBlocked.size - 1)) {
-                            Spacer(modifier = Modifier.height(6.dp))
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun BlockedHistoryStatRow(
-    label: String,
-    value: String,
-    icon: ImageVector
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        Row(
-            modifier = Modifier.weight(1f),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                modifier = Modifier.size(18.dp),
-                tint = Color(0xFFE65100)
-            )
-            Text(
-                text = label,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-
-        Text(
-            text = value,
-            style = MaterialTheme.typography.bodySmall,
-            fontWeight = FontWeight.SemiBold,
-            color = Color(0xFFD84315)
-        )
-    }
-}
-
-@Composable
-private fun RecentBlockedItem(record: com.lawanpmo.autoblocklist.data.model.BlockedDomainRecord) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(Color.White.copy(alpha = 0.6f), RoundedCornerShape(6.dp))
-            .padding(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
+            // Domain name
             Text(
                 text = record.domain,
-                style = MaterialTheme.typography.labelSmall,
+                style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
-                color = Color(0xFFE65100)
+                color = Color(0xFFFF9800)
             )
-            Text(
-                text = "${record.detectionTimeMs}ms • ${record.modelUsed}",
-                style = MaterialTheme.typography.bodySmall,
-                fontSize = 10.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            
+            Spacer(modifier = Modifier.height(6.dp))
+            
+            // Detection time and model
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "${record.detectionTimeMs}ms",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                
+                Text(
+                    text = record.modelUsed,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color(0xFFFF9800),
+                    modifier = Modifier
+                        .background(Color(0xFFFF9800).copy(alpha = 0.15f), RoundedCornerShape(4.dp))
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                )
+                
+                Text(
+                    text = "${"%.0f%%".format(record.score * 100)}",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    modifier = Modifier
+                        .background(Color(0xFFFF9800), RoundedCornerShape(4.dp))
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                )
+            }
         }
-        
-        Text(
-            text = "${"%.0f%%".format(record.score * 100)}",
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.Bold,
-            color = Color(0xFFD84315),
-            modifier = Modifier
-                .background(Color(0xFFFFE0B2), RoundedCornerShape(4.dp))
-                .padding(horizontal = 6.dp, vertical = 2.dp)
-        )
     }
+}
+
+@Composable
+private fun BlockedDomainsHistoryCard(
+    stats: com.lawanpmo.autoblocklist.data.model.BlocklistStatistics,
+    recentBlocked: List<com.lawanpmo.autoblocklist.data.model.BlockedDomainRecord>
+) {
+    // This composable is kept for backward compatibility but not used
+    // The functionality is moved to HistoryModal and HistoryButtonCard
 }
 
 @Composable

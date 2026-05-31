@@ -43,6 +43,37 @@ class RandomForestClassifier @Inject constructor(
             "dev", "npm", "maven", "gradle", "docker", "kubernetes", "firebase",
             "aws", "azure", "gcp", "heroku", "github", "gitlab", "bitbucket"
         )
+
+        private val COMMON_TLDS = setOf(
+            "com", "net", "org", "info", "biz", "name", "pro", "int",
+            "co", "io", "me", "tv", "cc", "ws", "in", "ru", "cn", "jp", "kr",
+            "de", "uk", "fr", "it", "es", "br", "au", "ca", "nl", "be", "ch",
+            "at", "pl", "se", "no", "dk", "fi", "cz", "hu", "ro", "bg", "gr",
+            "pt", "ie", "nz", "za", "sg", "hk", "tw", "my", "th", "ph", "id", "vn",
+            "xyz", "top", "site", "online", "club", "live", "fun", "space",
+            "tech", "store", "shop", "app", "dev", "cloud", "digital", "media",
+            "news", "blog", "video", "games", "world", "network", "global",
+            "center", "zone", "today", "one", "life", "work", "money", "email",
+            "link", "click", "download", "stream", "watch", "porn", "sex",
+            "xxx", "adult", "cam", "tube", "how",
+            "tk", "ml", "ga", "cf", "gq",
+            "ltd", "vip", "pw", "asia", "mobi", "tel", "travel", "jobs", "edu", "gov", "mil"
+        )
+
+        private val SECOND_LEVEL_TLDS = setOf(
+            "co.id", "co.uk", "co.jp", "co.kr", "co.nz", "co.za", "co.in", "co.th",
+            "com.au", "com.br", "com.cn", "com.hk", "com.my", "com.sg", "com.tw",
+            "com.vn", "com.ph", "com.ar", "com.mx", "com.co", "com.pe", "com.ve",
+            "com.ec", "com.pk", "com.bd", "com.ng", "com.eg", "com.tr", "com.ua", "com.ru",
+            "net.au", "net.br", "net.cn", "net.id", "net.in", "net.nz", "net.za",
+            "org.au", "org.br", "org.cn", "org.id", "org.in", "org.nz", "org.uk", "org.za",
+            "ac.id", "ac.uk", "ac.jp", "ac.kr", "ac.nz", "ac.za", "ac.th",
+            "edu.au", "edu.br", "edu.cn", "edu.hk", "edu.my", "edu.sg", "edu.tw", "edu.vn",
+            "go.id", "go.jp", "go.kr", "go.th",
+            "or.id", "or.jp", "or.kr", "or.th",
+            "ne.jp", "ne.kr",
+            "web.id", "sch.id", "my.id", "biz.id"
+        )
     }
 
     private var isModelLoaded = false
@@ -73,6 +104,19 @@ class RandomForestClassifier @Inject constructor(
 
         return try {
             val fullDomain = normalizeDomain(url)
+            
+            // Validate if input is a real domain (not a search query)
+            if (!isDomainValid(fullDomain)) {
+                Log.d(TAG, "⏭️  Skipped '$fullDomain' - not a valid domain (search query?)")
+                return UrlClassificationResult(
+                    score = 0.0f,
+                    isAdult = false,
+                    inferenceTimeMs = System.currentTimeMillis() - startTime,
+                    domain = fullDomain,
+                    skipped = true
+                )
+            }
+            
             val domainName = extractMainDomainName(fullDomain)
 
             Log.d(TAG, "Domain extraction: '$fullDomain' → '$domainName'")
@@ -197,5 +241,60 @@ class RandomForestClassifier @Inject constructor(
         }
 
         return if (parts.size >= 2) parts[parts.size - 2] else fullDomain
+    }
+
+    /**
+     * Validate if input is a real domain (not a search query)
+     * Valid domains must:
+     * 1. Have at least one dot (.) - e.g., example.com
+     * 2. Have a valid TLD - .com, .org, .xxx, etc.
+     * 3. Not be a search query (spaces, multiple words, etc.)
+     */
+    private fun isDomainValid(domain: String): Boolean {
+        // No spaces allowed - search queries typically have spaces
+        if (domain.contains(" ")) {
+            Log.d(TAG, "   ❌ Invalid: contains spaces (likely search query)")
+            return false
+        }
+
+        // Must have at least one dot
+        if (!domain.contains(".")) {
+            Log.d(TAG, "   ❌ Invalid: no dot found (likely search term, not domain)")
+            return false
+        }
+
+        val parts = domain.split(".")
+        
+        // Domain should have at least 2 parts (name.tld)
+        if (parts.size < 2) {
+            Log.d(TAG, "   ❌ Invalid: domain has less than 2 parts")
+            return false
+        }
+
+        // Check if last part (TLD) is valid
+        val tld = parts.last().lowercase()
+        if (tld.isEmpty() || tld.length > 6) {
+            Log.d(TAG, "   ❌ Invalid: TLD invalid length ($tld)")
+            return false
+        }
+
+        // Check if it has a valid TLD
+        if (parts.size >= 3) {
+            // Check second-level TLDs first (e.g., co.uk, com.au)
+            val potentialSecondLevelTld = "${parts[parts.size - 2]}.${tld}"
+            if (potentialSecondLevelTld in SECOND_LEVEL_TLDS) {
+                Log.d(TAG, "   ✅ Valid: second-level TLD ($potentialSecondLevelTld)")
+                return true
+            }
+        }
+
+        // Check single-level TLDs
+        if (tld in COMMON_TLDS) {
+            Log.d(TAG, "   ✅ Valid: TLD found ($tld)")
+            return true
+        }
+
+        Log.d(TAG, "   ❌ Invalid: TLD not recognized ($tld)")
+        return false
     }
 }
