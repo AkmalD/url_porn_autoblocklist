@@ -108,6 +108,7 @@ class UrlClassifier @Inject constructor(
         }
     }
 
+    @Synchronized
     override fun classify(url: String): UrlClassificationResult {
         val interp = interpreter
         if (interp == null) {

@@ -5,6 +5,21 @@ import kotlinx.parcelize.Parcelize
 import kotlinx.serialization.Serializable
 
 /**
+ * Hasil ekstraksi fitur leksikal dari URL (khusus Random Forest)
+ */
+@Serializable
+@Parcelize
+data class LexicalFeatures(
+    val domainLength: Int,            // 1. Panjang Domain
+    val numDigits: Int,               // 2. Jumlah Angka pada Domain
+    val numDots: Int,                 // 3. Jumlah Titik pada Domain
+    val numDelimiters: Int,           // 4. Jumlah Delimiter / Karakter Unik
+    val hasSuspiciousWords: Boolean,  // 5. Kehadiran Kata Sensitif/Mencurigakan
+    val digitToLetterRatio: Float,    // 6. Rasio Angka terhadap Huruf
+    val hasSequentialDigits: Boolean  // 7. Angka Berurutan
+) : Parcelable
+
+/**
  * Record untuk setiap domain yang diblokir
  */
 @Serializable
@@ -13,10 +28,11 @@ data class BlockedDomainRecord(
     val id: Long = System.currentTimeMillis(),
     val domain: String,
     val timestamp: Long = System.currentTimeMillis(),
-    val detectionTimeMs: Long,  // Waktu deteksi dalam ms
-    val modelUsed: String,  // CNN_1D atau RANDOM_FOREST
-    val score: Float,  // Classification score (0.0 - 1.0)
-    val userConfirmed: Boolean = false  // Apakah user confirm bahwa ini memang harus diblokir
+    val detectionTimeMs: Long,
+    val modelUsed: String,
+    val score: Float,
+    val userConfirmed: Boolean = false,
+    val lexicalFeatures: LexicalFeatures? = null  // Hanya ada untuk RANDOM_FOREST
 ) : Parcelable
 
 /**

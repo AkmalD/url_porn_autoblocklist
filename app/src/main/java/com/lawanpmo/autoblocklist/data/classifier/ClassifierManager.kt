@@ -47,8 +47,8 @@ class ClassifierManager @Inject constructor(
             // Load model if not already loaded
             if (!newClassifier.isModelLoaded()) {
                 val modelPath = when (modelType) {
-                    MLModelType.CNN_1D -> "url_classifier.tflite"
-                    MLModelType.RANDOM_FOREST -> "url_classifier_rf.tflite"
+                    MLModelType.CNN_1D -> "cnn1d_model.tflite"
+                    MLModelType.RANDOM_FOREST -> "rf_model.tflite"
                 }
 
                 Log.d(TAG, "Loading model from: $modelPath")

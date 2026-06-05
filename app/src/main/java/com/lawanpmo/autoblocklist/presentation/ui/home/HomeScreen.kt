@@ -36,6 +36,11 @@ import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.Analytics
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -69,21 +74,23 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.lawanpmo.autoblocklist.data.model.MLModelType
 import com.lawanpmo.autoblocklist.data.model.MLModels
+import com.lawanpmo.autoblocklist.data.preference.ModelPreference
 import com.lawanpmo.autoblocklist.data.repository.BlocklistRepository
 import com.lawanpmo.autoblocklist.presentation.ui.theme.Green500
 import com.lawanpmo.autoblocklist.presentation.ui.theme.Orange500
 import com.lawanpmo.autoblocklist.presentation.ui.theme.Purple500
 import com.lawanpmo.autoblocklist.service.UrlBlockerAccessibilityService
-import dagger.hilt.android.AndroidEntryPoint
-import javax.inject.Inject
 
 @Composable
 fun HomeScreen(
     blocklistRepository: BlocklistRepository? = null,
-    onModelSelected: (MLModelType) -> Unit = {}
+    modelPreference: ModelPreference? = null,
+    onModelSelected: (MLModelType) -> Unit = {},
+    onNavigateToEvaluation: () -> Unit = {}
 ) {
     val context = LocalContext.current
     var isServiceEnabled by remember { mutableStateOf(false) }
+    var isDetectionEnabled by remember { mutableStateOf(modelPreference?.isDetectionEnabled() ?: true) }
     var selectedModel by remember { mutableStateOf(MLModelType.CNN_1D) }
     var blockedHistory by remember { mutableStateOf(emptyList<com.lawanpmo.autoblocklist.data.model.BlockedDomainRecord>()) }
     var blocklistStats by remember { mutableStateOf(com.lawanpmo.autoblocklist.data.model.BlocklistStatistics.empty()) }
@@ -95,7 +102,8 @@ fun HomeScreen(
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 isServiceEnabled = isAccessibilityServiceEnabled(context)
-                
+                isDetectionEnabled = modelPreference?.isDetectionEnabled() ?: true
+
                 // Refresh blocked history
                 blocklistRepository?.let {
                     blockedHistory = it.getAllBlockedDomains()
@@ -142,7 +150,7 @@ fun HomeScreen(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             // Status Card
-            StatusCard(isServiceEnabled)
+            StatusCard(isServiceEnabled, isDetectionEnabled)
 
             Spacer(modifier = Modifier.height(24.dp))
 
@@ -242,7 +250,33 @@ fun HomeScreen(
                 description = "Semua proses deteksi berjalan di perangkat, tidak ada data yang dikirim ke server"
             )
 
-            Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Evaluasi Button
+            OutlinedButton(
+                onClick = onNavigateToEvaluation,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp),
+                shape = RoundedCornerShape(12.dp),
+                border = androidx.compose.foundation.BorderStroke(1.5.dp, Purple500)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Analytics,
+                    contentDescription = null,
+                    modifier = Modifier.size(22.dp),
+                    tint = Purple500
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Text(
+                    text = "Evaluasi Perbandingan Model",
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Purple500
+                )
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
 
             // Action Button
             if (!isServiceEnabled) {
@@ -281,24 +315,81 @@ fun HomeScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             } else {
+                // Start/Stop Detection Toggle
+                if (isDetectionEnabled) {
+                    Button(
+                        onClick = {
+                            modelPreference?.setDetectionEnabled(false)
+                            isDetectionEnabled = false
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(56.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFFE53935)
+                        )
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Stop,
+                            contentDescription = null,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(
+                            text = "Stop Deteksi",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                } else {
+                    Button(
+                        onClick = {
+                            modelPreference?.setDetectionEnabled(true)
+                            isDetectionEnabled = true
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(56.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Green500
+                        )
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.PlayArrow,
+                            contentDescription = null,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(
+                            text = "Start Deteksi",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
                 OutlinedButton(
                     onClick = {
                         openAccessibilitySettings(context)
                     },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(56.dp),
+                        .height(48.dp),
                     shape = RoundedCornerShape(16.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.Settings,
                         contentDescription = null,
-                        modifier = Modifier.size(24.dp)
+                        modifier = Modifier.size(20.dp)
                     )
-                    Spacer(modifier = Modifier.width(12.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Buka Pengaturan",
-                        style = MaterialTheme.typography.titleMedium
+                        text = "Buka Pengaturan Aksesibilitas",
+                        style = MaterialTheme.typography.bodyMedium
                     )
                 }
             }
@@ -642,9 +733,11 @@ private fun HistoryModal(
 
 @Composable
 private fun HistoryRecordItem(record: com.lawanpmo.autoblocklist.data.model.BlockedDomainRecord) {
+    var showFeatures by remember { mutableStateOf(false) }
+    val hasFeatures = record.lexicalFeatures != null
+
     Card(
-        modifier = Modifier
-            .fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(8.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.7f)
@@ -656,17 +749,15 @@ private fun HistoryRecordItem(record: com.lawanpmo.autoblocklist.data.model.Bloc
                 .fillMaxWidth()
                 .padding(12.dp)
         ) {
-            // Domain name
             Text(
                 text = record.domain,
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
                 color = Color(0xFFFF9800)
             )
-            
+
             Spacer(modifier = Modifier.height(6.dp))
-            
-            // Detection time and model
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -677,7 +768,7 @@ private fun HistoryRecordItem(record: com.lawanpmo.autoblocklist.data.model.Bloc
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                
+
                 Text(
                     text = record.modelUsed,
                     style = MaterialTheme.typography.labelSmall,
@@ -686,7 +777,7 @@ private fun HistoryRecordItem(record: com.lawanpmo.autoblocklist.data.model.Bloc
                         .background(Color(0xFFFF9800).copy(alpha = 0.15f), RoundedCornerShape(4.dp))
                         .padding(horizontal = 6.dp, vertical = 2.dp)
                 )
-                
+
                 Text(
                     text = "${"%.0f%%".format(record.score * 100)}",
                     style = MaterialTheme.typography.labelSmall,
@@ -697,6 +788,100 @@ private fun HistoryRecordItem(record: com.lawanpmo.autoblocklist.data.model.Bloc
                         .padding(horizontal = 6.dp, vertical = 2.dp)
                 )
             }
+
+            // Tombol expand fitur leksikal (hanya untuk RF)
+            if (hasFeatures) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { showFeatures = !showFeatures },
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = if (showFeatures) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                        tint = Purple500
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = if (showFeatures) "Sembunyikan Fitur Leksikal" else "Lihat Fitur Leksikal",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Purple500
+                    )
+                }
+
+                if (showFeatures) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    LexicalFeaturesPanel(features = record.lexicalFeatures!!)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LexicalFeaturesPanel(features: com.lawanpmo.autoblocklist.data.model.LexicalFeatures) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Purple500.copy(alpha = 0.06f), RoundedCornerShape(8.dp))
+            .padding(10.dp)
+    ) {
+        Text(
+            text = "Hasil Ekstraksi Fitur Leksikal",
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = Purple500,
+            modifier = Modifier.padding(bottom = 8.dp)
+        )
+
+        // 2-column grid
+        val featureRows = listOf(
+            Pair("1. Panjang Domain", "${features.domainLength}"),
+            Pair("2. Jumlah Angka", "${features.numDigits}"),
+            Pair("3. Jumlah Titik", "${features.numDots}"),
+            Pair("4. Jumlah Delimiter", "${features.numDelimiters}"),
+            Pair("5. Kata Mencurigakan", if (features.hasSuspiciousWords) "Ada" else "Tidak"),
+            Pair("6. Rasio Angka/Huruf", "%.3f".format(features.digitToLetterRatio)),
+            Pair("7. Angka Berurutan", if (features.hasSequentialDigits) "Ada" else "Tidak")
+        )
+
+        featureRows.chunked(2).forEach { rowPair ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                rowPair.forEach { (label, value) ->
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = label,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Text(
+                            text = value,
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (label.contains("Mencurigakan") || label.contains("Berurutan"))
+                                (if (value == "Ada") Color(0xFFE53935) else MaterialTheme.colorScheme.onSurface)
+                            else
+                                MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+                // Padding untuk row yang hanya punya 1 item
+                if (rowPair.size == 1) {
+                    Spacer(modifier = Modifier.weight(1f))
+                }
+            }
+            Spacer(modifier = Modifier.height(4.dp))
         }
     }
 }
@@ -770,15 +955,39 @@ private fun HeaderSection(isServiceEnabled: Boolean) {
 }
 
 @Composable
-private fun StatusCard(isServiceEnabled: Boolean) {
+private fun StatusCard(isServiceEnabled: Boolean, isDetectionEnabled: Boolean = true) {
+    val statusColor = when {
+        !isServiceEnabled -> Orange500
+        isDetectionEnabled -> Green500
+        else -> Color(0xFFFF8F00)
+    }
+
     val backgroundColor by animateColorAsState(
-        targetValue = if (isServiceEnabled) Green500.copy(alpha = 0.1f) else Orange500.copy(alpha = 0.1f),
+        targetValue = statusColor.copy(alpha = 0.1f),
         label = "status_bg"
     )
     val iconColor by animateColorAsState(
-        targetValue = if (isServiceEnabled) Green500 else Orange500,
+        targetValue = statusColor,
         label = "status_icon"
     )
+
+    val statusTitle = when {
+        !isServiceEnabled -> "Proteksi Tidak Aktif"
+        isDetectionEnabled -> "Proteksi Aktif"
+        else -> "Deteksi Dijeda"
+    }
+
+    val statusDesc = when {
+        !isServiceEnabled -> "Aktifkan layanan aksesibilitas untuk mulai"
+        isDetectionEnabled -> "Layanan sedang memantau browser Anda"
+        else -> "Tekan Start Deteksi untuk melanjutkan"
+    }
+
+    val statusIcon = when {
+        isServiceEnabled && isDetectionEnabled -> Icons.Default.CheckCircle
+        isServiceEnabled && !isDetectionEnabled -> Icons.Default.Stop
+        else -> Icons.Default.Warning
+    }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -794,7 +1003,7 @@ private fun StatusCard(isServiceEnabled: Boolean) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
-                imageVector = if (isServiceEnabled) Icons.Default.CheckCircle else Icons.Default.Warning,
+                imageVector = statusIcon,
                 contentDescription = null,
                 modifier = Modifier.size(48.dp),
                 tint = iconColor
@@ -804,16 +1013,13 @@ private fun StatusCard(isServiceEnabled: Boolean) {
 
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = if (isServiceEnabled) "Proteksi Aktif" else "Proteksi Tidak Aktif",
+                    text = statusTitle,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = iconColor
                 )
                 Text(
-                    text = if (isServiceEnabled)
-                        "Layanan sedang memantau browser Anda"
-                    else
-                        "Aktifkan layanan aksesibilitas untuk mulai",
+                    text = statusDesc,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

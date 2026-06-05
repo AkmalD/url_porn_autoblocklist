@@ -59,6 +59,7 @@ class UrlBlockerAccessibilityService : AccessibilityService() {
 
     // State
     private var isClassifierReady = false
+    private var isDetectionEnabled = true
     private var currentActiveModel: MLModelType = MLModelType.CNN_1D
     private var preferenceCheckJob: Job? = null
 
@@ -164,11 +165,14 @@ class UrlBlockerAccessibilityService : AccessibilityService() {
         serviceScope.launch {
             val preferredModel = modelPreference.getSelectedModel()
             Log.i(TAG, "Loading preferred model: ${preferredModel.name}")
-            
+
+            isDetectionEnabled = modelPreference.isDetectionEnabled()
+            Log.i(TAG, "Detection enabled: $isDetectionEnabled")
+
             isClassifierReady = classifierManager.switchModel(preferredModel)
             currentActiveModel = preferredModel
             Log.i(TAG, "Classifier ready: $isClassifierReady with model: ${currentActiveModel.name}")
-            
+
             // Start observing preference changes
             startPreferenceObserver()
         }
@@ -189,6 +193,12 @@ class UrlBlockerAccessibilityService : AccessibilityService() {
                         classifierManager.switchModel(savedModel)
                         currentActiveModel = savedModel
                         Log.i(TAG, "✅ Model auto-switched based on preference")
+                    }
+
+                    val detectionEnabled = modelPreference.isDetectionEnabled()
+                    if (detectionEnabled != isDetectionEnabled) {
+                        isDetectionEnabled = detectionEnabled
+                        Log.i(TAG, if (detectionEnabled) "▶️ Detection resumed" else "⏸️ Detection paused")
                     }
                 } catch (e: Exception) {
                     Log.e(TAG, "Error checking model preference", e)
@@ -318,6 +328,11 @@ class UrlBlockerAccessibilityService : AccessibilityService() {
             return
         }
 
+        if (!isDetectionEnabled) {
+            Log.d(TAG, "⏸️ Detection paused, skipping: $url")
+            return
+        }
+
         val result = classifierManager.classify(url)
 
         // Skip if not a valid domain (e.g., search query)
@@ -329,13 +344,13 @@ class UrlBlockerAccessibilityService : AccessibilityService() {
 
         if (result.isAdult) {
             Log.w(TAG, "⚠️ Adult content detected: $url (score=${"%.4f".format(result.score)})")
-            
-            // Save to history
+
             val record = BlockedDomainRecord(
                 domain = result.domain,
                 detectionTimeMs = result.inferenceTimeMs,
                 modelUsed = currentActiveModel.name,
-                score = result.score
+                score = result.score,
+                lexicalFeatures = result.lexicalFeatures
             )
             blocklistRepository.addBlockedDomain(record)
             

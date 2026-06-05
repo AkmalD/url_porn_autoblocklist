@@ -8,9 +8,16 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import com.lawanpmo.autoblocklist.data.classifier.RandomForestClassifier
+import com.lawanpmo.autoblocklist.data.classifier.UrlClassifier
 import com.lawanpmo.autoblocklist.data.model.MLModelType
 import com.lawanpmo.autoblocklist.data.preference.ModelPreference
+import com.lawanpmo.autoblocklist.data.repository.BlocklistRepository
+import com.lawanpmo.autoblocklist.presentation.ui.evaluation.EvaluationScreen
 import com.lawanpmo.autoblocklist.presentation.ui.home.HomeScreen
 import com.lawanpmo.autoblocklist.presentation.ui.theme.AutoBlocklistTheme
 import com.lawanpmo.autoblocklist.service.UrlBlockerAccessibilityService
@@ -23,67 +30,69 @@ import javax.inject.Inject
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
-    @Inject
-    lateinit var modelPreference: ModelPreference
-
-    @Inject
-    lateinit var blocklistRepository: com.lawanpmo.autoblocklist.data.repository.BlocklistRepository
+    @Inject lateinit var modelPreference: ModelPreference
+    @Inject lateinit var blocklistRepository: BlocklistRepository
+    @Inject lateinit var cnnClassifier: UrlClassifier
+    @Inject lateinit var rfClassifier: RandomForestClassifier
 
     companion object {
         private const val TAG = "MainActivity"
     }
 
+    private var showEvaluation by mutableStateOf(false)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        
+
         setContent {
             AutoBlocklistTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    HomeScreen(
-                        blocklistRepository = blocklistRepository,
-                        onModelSelected = { modelType ->
-                            handleModelSelection(modelType)
-                        }
-                    )
+                    if (showEvaluation) {
+                        EvaluationScreen(
+                            cnnClassifier = cnnClassifier,
+                            rfClassifier = rfClassifier,
+                            onBack = { showEvaluation = false }
+                        )
+                    } else {
+                        HomeScreen(
+                            blocklistRepository = blocklistRepository,
+                            modelPreference = modelPreference,
+                            onModelSelected = { modelType -> handleModelSelection(modelType) },
+                            onNavigateToEvaluation = { showEvaluation = true }
+                        )
+                    }
                 }
             }
         }
     }
 
-    /**
-     * Handle model selection from HomeScreen
-     */
+    override fun onBackPressed() {
+        if (showEvaluation) {
+            showEvaluation = false
+        } else {
+            super.onBackPressed()
+        }
+    }
+
     private fun handleModelSelection(modelType: MLModelType) {
         Log.i(TAG, "User selected model: ${modelType.name}")
-        
-        // Save preference
         modelPreference.setSelectedModel(modelType)
-        Log.i(TAG, "Saved model preference: ${modelType.name}")
-        
-        // Try to switch model in accessibility service
         switchModelInService(modelType)
     }
 
-    /**
-     * Switch model in running accessibility service
-     */
     private fun switchModelInService(modelType: MLModelType) {
         GlobalScope.launch(Dispatchers.Main) {
             try {
                 val service = getRunningAccessibilityService()
                 if (service != null) {
                     val success = service.switchClassificationModel(modelType)
-                    if (success) {
-                        Log.i(TAG, "✅ Model switched in service")
-                    } else {
-                        Log.w(TAG, "⚠️ Model switch failed in service")
-                    }
+                    Log.i(TAG, if (success) "✅ Model switched in service" else "⚠️ Model switch failed")
                 } else {
-                    Log.d(TAG, "Accessibility service not running - model will be loaded when service starts")
+                    Log.d(TAG, "Service not running — preference saved, will apply on next start")
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error switching model in service", e)
@@ -91,20 +100,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    /**
-     * Get reference to running accessibility service
-     * This is a workaround - normally you'd use other IPC methods
-     */
     private fun getRunningAccessibilityService(): UrlBlockerAccessibilityService? {
-        // Note: This is a simplified approach
-        // In production, use bound services or other proper IPC mechanisms
-        return try {
-            // AccessibilityService cannot be directly retrieved
-            // The service will automatically pick up the saved preference on next classification
-            null
-        } catch (e: Exception) {
-            Log.e(TAG, "Error getting accessibility service", e)
-            null
-        }
+        return try { null } catch (e: Exception) { null }
     }
 }

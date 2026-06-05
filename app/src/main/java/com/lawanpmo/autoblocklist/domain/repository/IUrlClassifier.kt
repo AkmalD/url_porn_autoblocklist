@@ -1,5 +1,7 @@
 package com.lawanpmo.autoblocklist.domain.repository
 
+import com.lawanpmo.autoblocklist.data.model.LexicalFeatures
+
 /**
  * Result of URL classification
  */
@@ -8,7 +10,8 @@ data class UrlClassificationResult(
     val isAdult: Boolean,
     val inferenceTimeMs: Long,
     val domain: String,
-    val skipped: Boolean = false  // True if input was skipped (not a valid domain)
+    val skipped: Boolean = false,
+    val lexicalFeatures: LexicalFeatures? = null  // Hanya untuk Random Forest
 ) {
     companion object {
         fun error(domain: String) = UrlClassificationResult(

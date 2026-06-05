@@ -17,6 +17,7 @@ class ModelPreference @Inject constructor(
     companion object {
         private const val PREF_NAME = "model_preference"
         private const val KEY_MODEL_TYPE = "selected_model_type"
+        private const val KEY_DETECTION_ENABLED = "detection_enabled"
     }
 
     private val prefs: SharedPreferences = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
@@ -38,5 +39,13 @@ class ModelPreference @Inject constructor(
      */
     fun setSelectedModel(modelType: MLModelType) {
         prefs.edit().putString(KEY_MODEL_TYPE, modelType.name).apply()
+    }
+
+    fun isDetectionEnabled(): Boolean {
+        return prefs.getBoolean(KEY_DETECTION_ENABLED, true)
+    }
+
+    fun setDetectionEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_DETECTION_ENABLED, enabled).apply()
     }
 }
