@@ -14,9 +14,9 @@ data class LexicalFeatures(
     val numDigits: Int,               // 2. Jumlah Angka pada Domain
     val numDots: Int,                 // 3. Jumlah Titik pada Domain
     val numDelimiters: Int,           // 4. Jumlah Delimiter / Karakter Unik
-    val hasSuspiciousWords: Boolean,  // 5. Kehadiran Kata Sensitif/Mencurigakan
+    val suspiciousWordCount: Int,     // 5. Jumlah Kata Mencurigakan (count, bukan boolean)
     val digitToLetterRatio: Float,    // 6. Rasio Angka terhadap Huruf
-    val hasSequentialDigits: Boolean  // 7. Angka Berurutan
+    val maxSequentialDigits: Int      // 7. Panjang Maksimal Digit Berurutan (count, bukan boolean)
 ) : Parcelable
 
 /**

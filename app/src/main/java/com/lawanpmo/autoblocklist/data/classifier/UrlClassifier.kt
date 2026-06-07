@@ -79,6 +79,8 @@ class UrlClassifier @Inject constructor(
 
     private var interpreter: Interpreter? = null
     private var threshold: Float = DEFAULT_THRESHOLD
+    private var modelInputLen: Int = MAX_LEN
+    private var modelInputIsInt: Boolean = false  // true jika model butuh INT32, false jika FLOAT32
 
     override suspend fun loadModel(modelPath: String): Boolean {
         release()
@@ -96,10 +98,16 @@ class UrlClassifier @Inject constructor(
             val inputTensor = interpreter?.getInputTensor(0)
             val outputTensor = interpreter?.getOutputTensor(0)
 
+            // Deteksi shape dan dtype dari model agar buffer cocok
+            modelInputLen   = inputTensor?.shape()?.lastOrNull() ?: MAX_LEN
+            modelInputIsInt = inputTensor?.dataType()?.name == "INT32"
+
             Log.i(TAG, "✅ CNN-1D model loaded successfully")
-            Log.d(TAG, "   Accuracy: 96.69% | Precision: 99.20% | Detection: 45ms")
-            Log.d(TAG, "   Input shape: ${inputTensor?.shape()?.contentToString()}")
+            Log.d(TAG, "   Input  shape: ${inputTensor?.shape()?.contentToString()}")
+            Log.d(TAG, "   Input  dtype: ${inputTensor?.dataType()} → ${if (modelInputIsInt) "INT32 mode" else "FLOAT32 mode"}")
             Log.d(TAG, "   Output shape: ${outputTensor?.shape()?.contentToString()}")
+            Log.d(TAG, "   Output dtype: ${outputTensor?.dataType()}")
+            Log.d(TAG, "   Model MAX_LEN: $modelInputLen | Code MAX_LEN: $MAX_LEN")
 
             true
         } catch (e: Exception) {
@@ -154,7 +162,8 @@ class UrlClassifier @Inject constructor(
                 score = score,
                 isAdult = isAdult,
                 inferenceTimeMs = inferenceTime,
-                domain = fullDomain
+                domain = fullDomain,
+                extractedDomainName = domainName
             )
         } catch (e: Exception) {
             Log.e(TAG, "Classification error for: $url", e)
@@ -249,18 +258,22 @@ class UrlClassifier @Inject constructor(
     }
 
     private fun tokenize(domain: String): IntArray {
-        val tokens = IntArray(MAX_LEN) { PAD_IDX }
-        for ((i, char) in domain.take(MAX_LEN).withIndex()) {
+        val len = modelInputLen
+        val tokens = IntArray(len) { PAD_IDX }
+        for ((i, char) in domain.take(len).withIndex()) {
             tokens[i] = CHAR_TO_IDX[char] ?: UNK_IDX
         }
         return tokens
     }
 
     private fun prepareInputBuffer(tokens: IntArray): ByteBuffer {
-        val buffer = ByteBuffer.allocateDirect(MAX_LEN * 4)
-        buffer.order(ByteOrder.nativeOrder())
-        for (token in tokens) {
-            buffer.putFloat(token.toFloat())
+        val buffer = ByteBuffer.allocateDirect(modelInputLen * 4).order(ByteOrder.nativeOrder())
+        if (modelInputIsInt) {
+            // Model Embedding layer butuh INT32 (indeks integer)
+            for (token in tokens) buffer.putInt(token)
+        } else {
+            // Model butuh FLOAT32 (indeks sebagai float)
+            for (token in tokens) buffer.putFloat(token.toFloat())
         }
         buffer.rewind()
         return buffer
@@ -269,12 +282,10 @@ class UrlClassifier @Inject constructor(
     override fun isModelLoaded(): Boolean = interpreter != null
 
     override fun release() {
-        try {
-            interpreter?.close()
-        } catch (e: Exception) {
-            Log.e(TAG, "Error releasing interpreter", e)
-        }
-        interpreter = null
+        try { interpreter?.close() } catch (e: Exception) { Log.e(TAG, "Error releasing interpreter", e) }
+        interpreter    = null
+        modelInputLen  = MAX_LEN
+        modelInputIsInt = false
     }
 
     private fun resolveModelPath(modelPath: String): String? {

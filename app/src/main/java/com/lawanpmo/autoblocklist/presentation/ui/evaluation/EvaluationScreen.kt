@@ -798,9 +798,9 @@ private fun EvalLexicalFeaturesPanel(
             Triple("2. Jumlah Angka",         features.numDigits.toString(),                            false),
             Triple("3. Jumlah Titik",         features.numDots.toString(),                              false),
             Triple("4. Jumlah Delimiter",     features.numDelimiters.toString(),                        false),
-            Triple("5. Kata Mencurigakan",    if (features.hasSuspiciousWords) "Ada" else "Tidak",      features.hasSuspiciousWords),
+            Triple("5. Kata Mencurigakan",    "${features.suspiciousWordCount} kata",                    features.suspiciousWordCount > 0),
             Triple("6. Rasio Angka/Huruf",   "%.3f".format(features.digitToLetterRatio),               false),
-            Triple("7. Angka Berurutan",      if (features.hasSequentialDigits) "Ada" else "Tidak",     features.hasSequentialDigits)
+            Triple("7. Max Digit Berurutan",  "${features.maxSequentialDigits} digit",                  features.maxSequentialDigits > 0)
         )
 
         rows.chunked(2).forEach { pair ->

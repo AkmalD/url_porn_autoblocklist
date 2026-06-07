@@ -46,14 +46,25 @@ class ClassifierManager @Inject constructor(
 
             // Load model if not already loaded
             if (!newClassifier.isModelLoaded()) {
-                val modelPath = when (modelType) {
-                    MLModelType.CNN_1D -> "cnn1d_model.tflite"
-                    MLModelType.RANDOM_FOREST -> "rf_model.tflite"
+                val modelPaths = when (modelType) {
+                    // url_classifier.tflite = model lama 4.5jt data, terbukti bekerja (273 KB)
+                    // CNN1D.tflite = model baru 100rb data, akurasi lebih rendah (75 KB)
+                    MLModelType.CNN_1D -> listOf("url_classifier.tflite", "CNN1D.tflite")
+                    // url_classifier_rf.tflite = model lama 4.5jt data (128 KB)
+                    // RandomForest.tflite = model baru 100rb data, ada GATHER error (2.9 MB)
+                    MLModelType.RANDOM_FOREST -> listOf("url_classifier_rf.tflite", "RandomForest.tflite")
                 }
 
-                Log.d(TAG, "Loading model from: $modelPath")
-                if (!newClassifier.loadModel(modelPath)) {
-                    Log.e(TAG, "❌ Failed to load model: $modelType")
+                val loaded = modelPaths.any { path ->
+                    Log.d(TAG, "Trying model: $path")
+                    newClassifier.loadModel(path).also { success ->
+                        if (success) Log.i(TAG, "✅ Loaded: $path")
+                        else Log.w(TAG, "⚠️ Failed: $path, trying next...")
+                    }
+                }
+
+                if (!loaded) {
+                    Log.e(TAG, "❌ All model paths failed for $modelType: $modelPaths")
                     return false
                 }
             }

@@ -8,10 +8,12 @@ import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import com.lawanpmo.autoblocklist.data.classifier.ClassifierManager
 import com.lawanpmo.autoblocklist.data.model.BlockedDomainRecord
+import com.lawanpmo.autoblocklist.data.model.LexicalFeatures
 import com.lawanpmo.autoblocklist.data.model.MLModelType
 import com.lawanpmo.autoblocklist.data.preference.ModelPreference
 import com.lawanpmo.autoblocklist.data.repository.BlocklistRepository
 import com.lawanpmo.autoblocklist.presentation.ui.BlockOverlayActivity
+import com.lawanpmo.autoblocklist.presentation.ui.DetectionInfoOverlayActivity
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -353,12 +355,21 @@ class UrlBlockerAccessibilityService : AccessibilityService() {
                 lexicalFeatures = result.lexicalFeatures
             )
             blocklistRepository.addBlockedDomain(record)
-            
+
             scheduleBlock(url)
         } else {
-            // URL is safe - cancel any pending block
-            // This handles the case where user deletes/changes the blocked URL
+            // URL is safe - cancel any pending block and show debug info overlay
             cancelPendingBlock()
+            Log.d(TAG, "✅ Safe URL: ${result.domain} → model input='${result.extractedDomainName}' (score=${"%.4f".format(result.score)})")
+            showDetectionInfoOverlay(
+                domain = result.domain,
+                extractedDomainName = result.extractedDomainName,
+                score = result.score,
+                isAdult = false,
+                model = currentActiveModel.name,
+                inferenceTimeMs = result.inferenceTimeMs,
+                lexicalFeatures = result.lexicalFeatures
+            )
         }
     }
 
@@ -406,6 +417,35 @@ class UrlBlockerAccessibilityService : AccessibilityService() {
             Log.d(TAG, "Block overlay activity launched for: $domain")
         } catch (e: Exception) {
             Log.e(TAG, "Error launching overlay activity", e)
+        }
+    }
+
+    private fun showDetectionInfoOverlay(
+        domain: String,
+        extractedDomainName: String?,
+        score: Float,
+        isAdult: Boolean,
+        model: String,
+        inferenceTimeMs: Long,
+        lexicalFeatures: LexicalFeatures? = null
+    ) {
+        try {
+            val intent = Intent(this, DetectionInfoOverlayActivity::class.java).apply {
+                putExtra(DetectionInfoOverlayActivity.EXTRA_DOMAIN, domain)
+                putExtra(DetectionInfoOverlayActivity.EXTRA_EXTRACTED_DOMAIN_NAME, extractedDomainName)
+                putExtra(DetectionInfoOverlayActivity.EXTRA_SCORE, score)
+                putExtra(DetectionInfoOverlayActivity.EXTRA_IS_ADULT, isAdult)
+                putExtra(DetectionInfoOverlayActivity.EXTRA_MODEL, model)
+                putExtra(DetectionInfoOverlayActivity.EXTRA_INFERENCE_TIME_MS, inferenceTimeMs)
+                if (lexicalFeatures != null) {
+                    putExtra(DetectionInfoOverlayActivity.EXTRA_LEXICAL_FEATURES, lexicalFeatures)
+                }
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            }
+            startActivity(intent)
+            Log.d(TAG, "Detection info overlay launched: domain=$domain score=${"%.4f".format(score)} adult=$isAdult")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error launching detection info overlay", e)
         }
     }
 

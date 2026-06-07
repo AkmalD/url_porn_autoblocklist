@@ -843,9 +843,9 @@ private fun LexicalFeaturesPanel(features: com.lawanpmo.autoblocklist.data.model
             Pair("2. Jumlah Angka", "${features.numDigits}"),
             Pair("3. Jumlah Titik", "${features.numDots}"),
             Pair("4. Jumlah Delimiter", "${features.numDelimiters}"),
-            Pair("5. Kata Mencurigakan", if (features.hasSuspiciousWords) "Ada" else "Tidak"),
+            Pair("5. Kata Mencurigakan", "${features.suspiciousWordCount} kata"),
             Pair("6. Rasio Angka/Huruf", "%.3f".format(features.digitToLetterRatio)),
-            Pair("7. Angka Berurutan", if (features.hasSequentialDigits) "Ada" else "Tidak")
+            Pair("7. Max Digit Berurutan", "${features.maxSequentialDigits} digit")
         )
 
         featureRows.chunked(2).forEach { rowPair ->

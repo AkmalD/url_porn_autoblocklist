@@ -84,42 +84,46 @@ class RandomForestClassifier @Inject constructor(
 
     @Synchronized
     override fun classify(url: String): UrlClassificationResult {
-        val interp = interpreter
-        if (interp == null) {
-            Log.w(TAG, "Model not loaded")
-            return UrlClassificationResult.error(url)
+        val startTime = System.currentTimeMillis()
+        val fullDomain = normalizeDomain(url)
+
+        if (!isDomainValid(fullDomain)) {
+            return UrlClassificationResult(
+                score = 0.0f,
+                isAdult = false,
+                inferenceTimeMs = System.currentTimeMillis() - startTime,
+                domain = fullDomain,
+                skipped = true
+            )
         }
 
-        val startTime = System.currentTimeMillis()
+        // Ekstrak fitur di luar try-catch agar selalu tersedia di semua jalur return
+        val features = extractLexicalFeatures(fullDomain)
+
+        Log.d(TAG, "Fitur '$fullDomain': len=${features.domainLength} digits=${features.numDigits} " +
+            "dots=${features.numDots} delims=${features.numDelimiters} " +
+            "suspCount=${features.suspiciousWordCount} d/l=${"%.3f".format(features.digitToLetterRatio)} " +
+            "maxSeqDig=${features.maxSequentialDigits}")
+
+        val interp = interpreter
+        if (interp == null) {
+            Log.w(TAG, "Model not loaded — returning features without score")
+            return UrlClassificationResult(
+                score = 0f,
+                isAdult = false,
+                inferenceTimeMs = System.currentTimeMillis() - startTime,
+                domain = fullDomain,
+                lexicalFeatures = features
+            )
+        }
 
         return try {
-            val fullDomain = normalizeDomain(url)
-
-            if (!isDomainValid(fullDomain)) {
-                return UrlClassificationResult(
-                    score = 0.0f,
-                    isAdult = false,
-                    inferenceTimeMs = System.currentTimeMillis() - startTime,
-                    domain = fullDomain,
-                    skipped = true
-                )
-            }
-
-            val features = extractLexicalFeatures(fullDomain)
-
-            Log.d(TAG, "Fitur '$fullDomain': len=${features.domainLength} digits=${features.numDigits} " +
-                "dots=${features.numDots} delims=${features.numDelimiters} " +
-                "suspicious=${features.hasSuspiciousWords} d/l=${"%.3f".format(features.digitToLetterRatio)} " +
-                "seqDig=${features.hasSequentialDigits}")
-
-            // Buffer dibuat sesuai ukuran AKTUAL yang dideteksi dari model — tidak hardcode 7
             val inputBuffer  = buildInputBuffer(features, modelInputElements)
             val outputBuffer = ByteBuffer.allocateDirect(modelOutputElements * 4).order(ByteOrder.nativeOrder())
 
             interp.run(inputBuffer, outputBuffer)
 
             outputBuffer.rewind()
-            // Jika output 2 elemen [p_safe, p_adult], ambil elemen kedua (index 1)
             val score = if (modelOutputElements >= 2) {
                 outputBuffer.float  // skip p_safe
                 outputBuffer.float  // p_adult
@@ -140,8 +144,15 @@ class RandomForestClassifier @Inject constructor(
                 lexicalFeatures = features
             )
         } catch (e: Throwable) {
-            Log.e(TAG, "Classification error for: $url", e)
-            UrlClassificationResult.error(normalizeDomain(url))
+            Log.e(TAG, "RF inference error for '$fullDomain': ${e.message}")
+            // Tetap kembalikan features meskipun inferensi gagal
+            UrlClassificationResult(
+                score = 0f,
+                isAdult = false,
+                inferenceTimeMs = System.currentTimeMillis() - startTime,
+                domain = fullDomain,
+                lexicalFeatures = features
+            )
         }
     }
 
@@ -160,18 +171,20 @@ class RandomForestClassifier @Inject constructor(
         val letters   = lower.count { it.isLetter() }
         val dots      = lower.count { it == '.' }
         val delimiters = lower.count { !it.isLetterOrDigit() && it != '.' }
-        val hasSuspicious = SUSPICIOUS_WORDS.any { lower.contains(it) }
+        // F5: jumlah kata mencurigakan (COUNT, bukan boolean) — sesuai training Python
+        val suspiciousWordCount = SUSPICIOUS_WORDS.count { lower.contains(it) }
         val digitToLetterRatio = if (letters > 0) digits.toFloat() / letters.toFloat() else digits.toFloat()
-        val hasSequential = Regex("\\d{3,}").containsMatchIn(lower)
+        // F7: panjang maksimal digit berurutan (COUNT, bukan boolean) — sesuai training Python
+        val maxSequentialDigits = Regex("\\d+").findAll(lower).maxOfOrNull { it.value.length } ?: 0
 
         return LexicalFeatures(
-            domainLength      = domain.length,
-            numDigits         = digits,
-            numDots           = dots,
-            numDelimiters     = delimiters,
-            hasSuspiciousWords = hasSuspicious,
-            digitToLetterRatio = digitToLetterRatio,
-            hasSequentialDigits = hasSequential
+            domainLength        = domain.length,
+            numDigits           = digits,
+            numDots             = dots,
+            numDelimiters       = delimiters,
+            suspiciousWordCount = suspiciousWordCount,
+            digitToLetterRatio  = digitToLetterRatio,
+            maxSequentialDigits = maxSequentialDigits
         )
     }
 
@@ -188,9 +201,9 @@ class RandomForestClassifier @Inject constructor(
             features.numDigits.toFloat(),
             features.numDots.toFloat(),
             features.numDelimiters.toFloat(),
-            if (features.hasSuspiciousWords) 1.0f else 0.0f,
+            features.suspiciousWordCount.toFloat(),  // F5: count, bukan boolean
             features.digitToLetterRatio,
-            if (features.hasSequentialDigits) 1.0f else 0.0f
+            features.maxSequentialDigits.toFloat()   // F7: max length, bukan boolean
         )
         val buffer = ByteBuffer.allocateDirect(inputElements * 4).order(ByteOrder.nativeOrder())
         for (i in 0 until inputElements) {

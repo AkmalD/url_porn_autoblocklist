@@ -11,7 +11,8 @@ data class UrlClassificationResult(
     val inferenceTimeMs: Long,
     val domain: String,
     val skipped: Boolean = false,
-    val lexicalFeatures: LexicalFeatures? = null  // Hanya untuk Random Forest
+    val lexicalFeatures: LexicalFeatures? = null,  // Hanya untuk Random Forest
+    val extractedDomainName: String? = null        // Nama domain yang benar-benar dimasukkan ke model
 ) {
     companion object {
         fun error(domain: String) = UrlClassificationResult(
