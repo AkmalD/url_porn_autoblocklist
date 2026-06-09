@@ -1,17 +1,14 @@
 package com.lawanpmo.autoblocklist.presentation.ui.evaluation
 
-import android.util.Log
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -19,6 +16,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -30,27 +29,30 @@ import com.lawanpmo.autoblocklist.data.model.*
 import com.lawanpmo.autoblocklist.presentation.ui.theme.Green500
 import com.lawanpmo.autoblocklist.presentation.ui.theme.Purple500
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun EvaluationScreen(
-    cnnClassifier: UrlClassifier,
-    rfClassifier: RandomForestClassifier,
-    onBack: () -> Unit
-) {
-    val scope = rememberCoroutineScope()
+fun EvaluationScreen(onBack: () -> Unit) {
 
-    var testUrls by remember { mutableStateOf(DEFAULT_TEST_URLS.toMutableList()) }
-    var isLoading by remember { mutableStateOf(false) }
-    var loadingMessage by remember { mutableStateOf("") }
-    var results by remember { mutableStateOf<List<UrlTestResult>?>(null) }
+    val context      = LocalContext.current.applicationContext
+    val primaryColor = MaterialTheme.colorScheme.primary
+
+    var selectedModel by remember { mutableStateOf(EvalModelChoice.CNN_1D) }
+    var testUrls      by remember { mutableStateOf(DEFAULT_TEST_URLS.toMutableList()) }
+    var results       by remember { mutableStateOf<List<SingleModelTestResult>?>(null) }
+    var evaluatedWith by remember { mutableStateOf<EvalModelChoice?>(null) }
+    var isRunning     by remember { mutableStateOf(false) }
+    var errorMessage  by remember { mutableStateOf<String?>(null) }
     var showAddDialog by remember { mutableStateOf(false) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
 
-    val cnnMetrics = results?.let { ModelEvaluationMetrics.fromResults(it, useCnn = true) }
-    val rfMetrics = results?.let { ModelEvaluationMetrics.fromResults(it, useCnn = false) }
+    val metrics = results?.let { ModelEvaluationMetrics.fromResults(it) }
+
+    // Blokir tombol back saat evaluasi berjalan agar tidak memicu release()
+    // sementara TFLite masih berjalan di IO thread
+    BackHandler(enabled = isRunning) { /* abaikan back saat running */ }
 
     if (showAddDialog) {
         AddUrlDialog(
@@ -68,19 +70,19 @@ fun EvaluationScreen(
                 title = {
                     Column {
                         Text(
-                            text = "Evaluasi Model",
-                            style = MaterialTheme.typography.titleMedium,
+                            text       = "Evaluasi Model",
+                            style      = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "CNN-1D vs Random Forest",
+                            text  = "Uji model TFLite dengan dataset URL",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(onClick = { if (!isRunning) onBack() }) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Kembali")
                     }
                 },
@@ -91,31 +93,49 @@ fun EvaluationScreen(
         }
     ) { paddingValues ->
         LazyColumn(
-            modifier = Modifier
+            modifier            = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
                 .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-            contentPadding = PaddingValues(vertical = 16.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding      = PaddingValues(vertical = 16.dp)
         ) {
-            // --- Dataset Section ---
+
+            // ── Pilih Model ──────────────────────────────────────────────────
+            item {
+                SectionHeader("Pilih Model", null)
+                Spacer(Modifier.height(8.dp))
+                ModelSelector(
+                    selected = selectedModel,
+                    enabled  = !isRunning,
+                    onSelect = {
+                        selectedModel = it
+                        results       = null
+                        evaluatedWith = null
+                        errorMessage  = null
+                    }
+                )
+            }
+
+            // ── Dataset ──────────────────────────────────────────────────────
             item {
                 SectionHeader(
                     title = "Dataset Uji",
-                    badge = "${testUrls.size} URL • ${testUrls.count { it.isAdult }} Adult • ${testUrls.count { !it.isAdult }} Aman"
+                    badge = "${testUrls.size} URL  •  ${testUrls.count { it.isAdult }} Adult  •  ${testUrls.count { !it.isAdult }} Aman"
                 )
             }
 
             itemsIndexed(testUrls) { index, item ->
                 TestUrlRow(
-                    item = item,
-                    onDelete = {
+                    item          = item,
+                    enabled       = !isRunning,
+                    onDelete      = {
                         testUrls = testUrls.toMutableList().also { it.removeAt(index) }
-                        results = null
+                        results  = null
                     },
                     onToggleLabel = { newIsAdult ->
-                        testUrls = testUrls.toMutableList().also {
-                            it[index] = item.copy(isAdult = newIsAdult)
+                        testUrls = testUrls.toMutableList().also { list ->
+                            list[index] = item.copy(isAdult = newIsAdult)
                         }
                         results = null
                     }
@@ -124,239 +144,182 @@ fun EvaluationScreen(
 
             item {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier              = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     OutlinedButton(
-                        onClick = { showAddDialog = true },
+                        onClick  = { showAddDialog = true },
+                        enabled  = !isRunning,
                         modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(8.dp)
+                        shape    = RoundedCornerShape(8.dp)
                     ) {
-                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Icon(Icons.Default.Add, null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(4.dp))
                         Text("Tambah URL")
                     }
                     OutlinedButton(
-                        onClick = {
-                            testUrls = DEFAULT_TEST_URLS.toMutableList()
-                            results = null
+                        onClick  = {
+                            testUrls     = DEFAULT_TEST_URLS.toMutableList()
+                            results      = null
+                            errorMessage = null
                         },
+                        enabled  = !isRunning,
                         modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(8.dp)
+                        shape    = RoundedCornerShape(8.dp)
                     ) {
-                        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Icon(Icons.Default.Refresh, null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(4.dp))
                         Text("Reset")
                     }
                 }
             }
 
-            // --- Evaluasi Button ---
+            // ── Tombol Evaluasi ───────────────────────────────────────────────
             item {
-                if (isLoading) {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.primaryContainer
-                        )
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(20.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            CircularProgressIndicator(modifier = Modifier.size(32.dp))
-                            Text(
-                                text = loadingMessage,
-                                style = MaterialTheme.typography.bodyMedium,
-                                textAlign = TextAlign.Center
-                            )
+                Button(
+                    onClick  = {
+                        if (isRunning || testUrls.isEmpty()) return@Button
+                        val chosen     = selectedModel
+                        val snapshot   = testUrls.toList()
+                        val modelPaths = when (chosen) {
+                            EvalModelChoice.CNN_1D        -> listOf("url_classifier.tflite", "CNN1D.tflite")
+                            EvalModelChoice.RANDOM_FOREST -> listOf("url_classifier_rf.tflite", "RandomForest.tflite")
                         }
-                    }
-                } else {
-                    Button(
-                        onClick = {
-                            if (testUrls.isEmpty()) return@Button
-                            scope.launch {
-                                // launch{} berjalan di Main thread — aman untuk update UI state
-                                isLoading = true
-                                errorMessage = null
-                                try {
-                                    // Update UI (Main thread) → pindah ke IO → kembali ke Main
-                                    loadingMessage = "Memuat model CNN-1D..."
-                                    withContext(Dispatchers.IO) {
-                                        if (!cnnClassifier.isModelLoaded()) {
-                                            cnnClassifier.loadModel("url_classifier.tflite")
-                                        }
-                                    }
 
-                                    loadingMessage = "Memuat model Random Forest..."
-                                    withContext(Dispatchers.IO) {
-                                        if (!rfClassifier.isModelLoaded()) {
-                                            rfClassifier.loadModel("url_classifier_rf.tflite")
-                                        }
-                                    }
+                        // Instance dibuat fresh per-evaluasi dan TIDAK disimpan di remember.
+                        // release() dipanggil di finally setelah semua inferensi selesai,
+                        // sehingga tidak ada race condition antara release() dan classify().
+                        GlobalScope.launch(Dispatchers.Main) {
+                            isRunning    = true
+                            errorMessage = null
+                            results      = null
 
-                                    // Pastikan kedua model berhasil dimuat
-                                    if (!cnnClassifier.isModelLoaded()) {
-                                        errorMessage = "Gagal memuat model CNN-1D. Pastikan file url_classifier.tflite ada di assets."
-                                        isLoading = false
-                                        return@launch
-                                    }
-                                    if (!rfClassifier.isModelLoaded()) {
-                                        errorMessage = "Gagal memuat model Random Forest. Pastikan file url_classifier_rf.tflite ada di assets."
-                                        isLoading = false
-                                        return@launch
-                                    }
-
-                                    val snapshot = testUrls.toList()
-                                    loadingMessage = "Menjalankan evaluasi pada ${snapshot.size} URL..."
-
-                                    // Semua inferensi dijalankan di IO thread, TANPA menyentuh UI state
-                                    val evalResults: List<UrlTestResult> = withContext(Dispatchers.IO) {
-                                        snapshot.map { item ->
-                                            val cnn = try {
-                                                cnnClassifier.classify(item.url)
-                                            } catch (e: Throwable) {
-                                                Log.e("Evaluation", "CNN error on ${item.url}", e)
-                                                com.lawanpmo.autoblocklist.domain.repository.UrlClassificationResult.error(item.url)
-                                            }
-                                            val rf = try {
-                                                rfClassifier.classify(item.url)
-                                            } catch (e: Throwable) {
-                                                Log.e("Evaluation", "RF error on ${item.url}", e)
-                                                com.lawanpmo.autoblocklist.domain.repository.UrlClassificationResult.error(item.url)
-                                            }
-                                            UrlTestResult(
-                                                url = item.url,
-                                                groundTruth = item.isAdult,
-                                                cnnPrediction = cnn.isAdult,
-                                                cnnScore = cnn.score,
-                                                cnnTimeMs = cnn.inferenceTimeMs,
-                                                rfPrediction = rf.isAdult,
-                                                rfScore = rf.score,
-                                                rfTimeMs = rf.inferenceTimeMs,
-                                                rfLexicalFeatures = rf.lexicalFeatures
-                                            )
-                                        }
-                                    }
-
-                                    // Kembali ke Main thread — aman update UI state
-                                    results = evalResults
-                                    loadingMessage = ""
-                                } catch (e: Throwable) {
-                                    errorMessage = "Error: ${e.javaClass.simpleName} — ${e.message}"
-                                    Log.e("Evaluation", "Evaluation failed", e)
-                                } finally {
-                                    isLoading = false
-                                }
+                            val classifier = when (chosen) {
+                                EvalModelChoice.CNN_1D        -> UrlClassifier(context)
+                                EvalModelChoice.RANDOM_FOREST -> RandomForestClassifier(context)
                             }
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(52.dp),
-                        shape = RoundedCornerShape(12.dp),
-                        enabled = testUrls.isNotEmpty(),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primary
+
+                            try {
+                                val loaded = withContext(Dispatchers.IO) {
+                                    modelPaths.any { path -> classifier.loadModel(path) }
+                                }
+                                if (!loaded) {
+                                    errorMessage = "Gagal memuat model. Pastikan file .tflite ada di assets."
+                                    return@launch
+                                }
+
+                                val res = withContext(Dispatchers.IO) {
+                                    snapshot.map { item ->
+                                        val r = classifier.classify(item.url)
+                                        SingleModelTestResult(
+                                            url             = item.url,
+                                            groundTruth     = item.isAdult,
+                                            prediction      = r.isAdult,
+                                            score           = r.score,
+                                            inferenceTimeMs = r.inferenceTimeMs,
+                                            lexicalFeatures = r.lexicalFeatures
+                                        )
+                                    }
+                                }
+
+                                results       = res
+                                evaluatedWith = chosen
+                            } catch (e: Exception) {
+                                errorMessage = "Error: ${e.message ?: "tidak diketahui"}"
+                            } finally {
+                                // Selalu release setelah inferensi selesai, tanpa ada
+                                // thread lain yang bisa mengakses instance ini
+                                try { classifier.release() } catch (_: Exception) {}
+                                isRunning = false
+                            }
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp),
+                    shape    = RoundedCornerShape(12.dp),
+                    enabled  = !isRunning && testUrls.isNotEmpty(),
+                    colors   = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary
+                    )
+                ) {
+                    if (isRunning) {
+                        CircularProgressIndicator(
+                            modifier    = Modifier.size(20.dp),
+                            color       = MaterialTheme.colorScheme.onPrimary,
+                            strokeWidth = 2.dp
                         )
-                    ) {
-                        Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(22.dp))
+                        Spacer(Modifier.width(10.dp))
+                        Text(
+                            text       = "Mengevaluasi...",
+                            style      = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    } else {
+                        Icon(Icons.Default.PlayArrow, null, modifier = Modifier.size(22.dp))
                         Spacer(Modifier.width(8.dp))
                         Text(
-                            text = "Mulai Evaluasi",
-                            style = MaterialTheme.typography.titleSmall,
+                            text       = "Mulai Evaluasi",
+                            style      = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.SemiBold
                         )
                     }
                 }
             }
 
+            // ── Error ─────────────────────────────────────────────────────────
             if (errorMessage != null) {
                 item {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFEBEE)),
-                        shape = RoundedCornerShape(8.dp)
-                    ) {
-                        Text(
-                            text = errorMessage!!,
-                            modifier = Modifier.padding(12.dp),
-                            color = Color(0xFFE53935),
-                            style = MaterialTheme.typography.bodySmall
+                        shape    = RoundedCornerShape(10.dp),
+                        colors   = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.errorContainer
                         )
+                    ) {
+                        Row(
+                            modifier              = Modifier.padding(12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalAlignment     = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Default.Error, null,
+                                tint     = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Text(
+                                text  = errorMessage!!,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onErrorContainer
+                            )
+                        }
                     }
                 }
             }
 
-            // --- Hasil Evaluasi ---
-            if (results != null && cnnMetrics != null && rfMetrics != null) {
+            // ── Hasil Evaluasi ────────────────────────────────────────────────
+            if (results != null && metrics != null && evaluatedWith != null) {
+                val modelLabel  = if (evaluatedWith == EvalModelChoice.CNN_1D) "CNN-1D" else "Random Forest"
+                val accentColor = if (evaluatedWith == EvalModelChoice.CNN_1D) primaryColor else Purple500
+
                 item {
                     Divider()
                     Spacer(Modifier.height(4.dp))
                     SectionHeader(
-                        title = "Hasil Evaluasi",
-                        badge = "${results!!.size} URL diuji"
+                        title = "Hasil Evaluasi — $modelLabel",
+                        badge = "${results!!.size} URL"
                     )
                 }
 
-                // Metrics Cards side by side
-                item {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        ModelMetricsCard(
-                            modelName = "CNN-1D",
-                            metrics = cnnMetrics,
-                            accentColor = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.weight(1f)
-                        )
-                        ModelMetricsCard(
-                            modelName = "Random Forest",
-                            metrics = rfMetrics,
-                            accentColor = Purple500,
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                }
+                item { ModelMetricsCard(modelLabel, metrics, accentColor) }
 
-                // Confusion Matrix
-                item {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        ConfusionMatrixCard(
-                            modelName = "CNN-1D",
-                            metrics = cnnMetrics,
-                            accentColor = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.weight(1f)
-                        )
-                        ConfusionMatrixCard(
-                            modelName = "Random Forest",
-                            metrics = rfMetrics,
-                            accentColor = Purple500,
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                }
+                item { ConfusionMatrixCard(modelLabel, metrics, accentColor) }
 
-                // Inference Time Comparison
-                item {
-                    InferenceTimeCard(cnnMetrics = cnnMetrics, rfMetrics = rfMetrics)
-                }
+                item { LatencyCard(metrics, modelLabel, accentColor) }
 
-                // Detail per URL
-                item {
-                    SectionHeader(title = "Detail Hasil per URL", badge = null)
-                }
+                item { SectionHeader("Detail per URL", null) }
 
                 item {
-                    // Table header
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -367,15 +330,18 @@ fun EvaluationScreen(
                             .padding(horizontal = 8.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("Domain", modifier = Modifier.weight(2.5f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                        Text("Label", modifier = Modifier.weight(1.2f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
-                        Text("CNN", modifier = Modifier.weight(1.5f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
-                        Text("RF", modifier = Modifier.weight(1.5f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+                        Text("Domain",   Modifier.weight(2.5f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                        Text("Label",    Modifier.weight(1.2f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+                        Text("Prediksi", Modifier.weight(1.8f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
                     }
                 }
 
                 itemsIndexed(results!!) { index, result ->
-                    UrlResultRow(result = result, isEven = index % 2 == 0)
+                    UrlResultRow(
+                        result      = result,
+                        isEven      = index % 2 == 0,
+                        showLexical = evaluatedWith == EvalModelChoice.RANDOM_FOREST
+                    )
                 }
 
                 item { Spacer(Modifier.height(24.dp)) }
@@ -384,29 +350,108 @@ fun EvaluationScreen(
     }
 }
 
-// ─── Sub-composables ────────────────────────────────────────────────────────
+// ─── Sub-composables ──────────────────────────────────────────────────────────
+
+@Composable
+private fun ModelSelector(
+    selected: EvalModelChoice,
+    enabled: Boolean,
+    onSelect: (EvalModelChoice) -> Unit
+) {
+    val primaryColor = MaterialTheme.colorScheme.primary
+    Row(
+        modifier              = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        ModelSelectorCard(
+            label       = "CNN-1D",
+            subtitle    = "Berbasis karakter domain",
+            icon        = Icons.Default.Psychology,
+            selected    = selected == EvalModelChoice.CNN_1D,
+            enabled     = enabled,
+            accentColor = primaryColor,
+            modifier    = Modifier.weight(1f),
+            onClick     = { onSelect(EvalModelChoice.CNN_1D) }
+        )
+        ModelSelectorCard(
+            label       = "Random Forest",
+            subtitle    = "7 fitur leksikal",
+            icon        = Icons.Default.AccountTree,
+            selected    = selected == EvalModelChoice.RANDOM_FOREST,
+            enabled     = enabled,
+            accentColor = Purple500,
+            modifier    = Modifier.weight(1f),
+            onClick     = { onSelect(EvalModelChoice.RANDOM_FOREST) }
+        )
+    }
+}
+
+@Composable
+private fun ModelSelectorCard(
+    label: String,
+    subtitle: String,
+    icon: ImageVector,
+    selected: Boolean,
+    enabled: Boolean,
+    accentColor: Color,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    val effectiveAccent = if (enabled) accentColor else accentColor.copy(alpha = 0.4f)
+    Card(
+        modifier = modifier.clickable(enabled = enabled, onClick = onClick),
+        shape    = RoundedCornerShape(10.dp),
+        colors   = CardDefaults.cardColors(
+            containerColor = if (selected) effectiveAccent.copy(alpha = 0.10f)
+                             else MaterialTheme.colorScheme.surface
+        ),
+        border = BorderStroke(
+            width = if (selected) 2.dp else 1.dp,
+            color = if (selected) effectiveAccent else MaterialTheme.colorScheme.outlineVariant
+        )
+    ) {
+        Row(
+            modifier              = Modifier.padding(12.dp),
+            verticalAlignment     = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Icon(
+                imageVector        = icon,
+                contentDescription = null,
+                tint     = if (selected) effectiveAccent else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(22.dp)
+            )
+            Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                Text(
+                    text       = label,
+                    style      = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color      = if (selected) effectiveAccent else MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text  = subtitle,
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
 
 @Composable
 private fun SectionHeader(title: String, badge: String?) {
     Row(
-        verticalAlignment = Alignment.CenterVertically,
+        verticalAlignment     = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.Bold
-        )
+        Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
         if (badge != null) {
             Text(
-                text = badge,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                text     = badge,
+                style    = MaterialTheme.typography.labelSmall,
+                color    = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier
-                    .background(
-                        MaterialTheme.colorScheme.surfaceVariant,
-                        RoundedCornerShape(4.dp)
-                    )
+                    .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(4.dp))
                     .padding(horizontal = 6.dp, vertical = 2.dp)
             )
         }
@@ -416,6 +461,7 @@ private fun SectionHeader(title: String, badge: String?) {
 @Composable
 private fun TestUrlRow(
     item: TestUrlItem,
+    enabled: Boolean,
     onDelete: () -> Unit,
     onToggleLabel: (Boolean) -> Unit
 ) {
@@ -428,41 +474,37 @@ private fun TestUrlRow(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
-            text = item.url,
-            style = MaterialTheme.typography.bodySmall,
+            text     = item.url,
+            style    = MaterialTheme.typography.bodySmall,
             modifier = Modifier.weight(1f),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
         )
         Spacer(Modifier.width(8.dp))
-
-        // Toggle label
         val labelColor = if (item.isAdult) Color(0xFFE53935) else Green500
-        val labelText = if (item.isAdult) "ADULT" else "AMAN"
         Box(
             modifier = Modifier
                 .background(labelColor.copy(alpha = 0.12f), RoundedCornerShape(4.dp))
                 .border(1.dp, labelColor.copy(alpha = 0.5f), RoundedCornerShape(4.dp))
-                .clickable { onToggleLabel(!item.isAdult) }
+                .clickable(enabled = enabled) { onToggleLabel(!item.isAdult) }
                 .padding(horizontal = 6.dp, vertical = 3.dp),
             contentAlignment = Alignment.Center
         ) {
             Text(
-                text = labelText,
-                style = MaterialTheme.typography.labelSmall,
+                text       = if (item.isAdult) "ADULT" else "AMAN",
+                style      = MaterialTheme.typography.labelSmall,
                 fontWeight = FontWeight.Bold,
-                color = labelColor
+                color      = labelColor
             )
         }
-
         Spacer(Modifier.width(4.dp))
-        IconButton(onClick = onDelete, modifier = Modifier.size(28.dp)) {
-            Icon(
-                Icons.Default.Close,
-                contentDescription = "Hapus",
-                modifier = Modifier.size(16.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+        IconButton(
+            onClick  = onDelete,
+            enabled  = enabled,
+            modifier = Modifier.size(28.dp)
+        ) {
+            Icon(Icons.Default.Close, "Hapus", modifier = Modifier.size(16.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -471,43 +513,50 @@ private fun TestUrlRow(
 private fun ModelMetricsCard(
     modelName: String,
     metrics: ModelEvaluationMetrics,
-    accentColor: Color,
-    modifier: Modifier = Modifier
+    accentColor: Color
 ) {
     Card(
-        modifier = modifier,
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = accentColor.copy(alpha = 0.08f)),
-        border = BorderStroke(1.5.dp, accentColor.copy(alpha = 0.5f))
+        modifier = Modifier.fillMaxWidth(),
+        shape    = RoundedCornerShape(12.dp),
+        colors   = CardDefaults.cardColors(containerColor = accentColor.copy(alpha = 0.07f)),
+        border   = BorderStroke(1.5.dp, accentColor.copy(alpha = 0.4f))
     ) {
         Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
+            modifier            = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Text(
-                text = modelName,
-                style = MaterialTheme.typography.labelMedium,
+                text       = "Metrik Evaluasi — $modelName",
+                style      = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.Bold,
-                color = accentColor
+                color      = accentColor
             )
-            Divider(color = accentColor.copy(alpha = 0.3f))
-            MetricRow("Accuracy", "%.1f%%".format(metrics.accuracy * 100), accentColor)
-            MetricRow("Precision", "%.1f%%".format(metrics.precision * 100), accentColor)
-            MetricRow("Recall", "%.1f%%".format(metrics.recall * 100), accentColor)
-            MetricRow("F1-Score", "%.1f%%".format(metrics.f1Score * 100), accentColor)
+            Divider(color = accentColor.copy(alpha = 0.25f))
+            Row(
+                modifier              = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                MetricBox("Accuracy",  "%.1f%%".format(metrics.accuracy  * 100), accentColor, Modifier.weight(1f))
+                MetricBox("Precision", "%.1f%%".format(metrics.precision * 100), accentColor, Modifier.weight(1f))
+                MetricBox("Recall",    "%.1f%%".format(metrics.recall    * 100), accentColor, Modifier.weight(1f))
+                MetricBox("F1-Score",  "%.1f%%".format(metrics.f1Score   * 100), accentColor, Modifier.weight(1f))
+            }
         }
     }
 }
 
 @Composable
-private fun MetricRow(label: String, value: String, accentColor: Color) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+private fun MetricBox(label: String, value: String, accentColor: Color, modifier: Modifier = Modifier) {
+    Column(
+        modifier            = modifier
+            .background(accentColor.copy(alpha = 0.09f), RoundedCornerShape(8.dp))
+            .padding(vertical = 8.dp, horizontal = 2.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(2.dp)
     ) {
-        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(value, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = accentColor)
+        Text(value, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, color = accentColor)
+        Text(label, style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
     }
 }
 
@@ -515,51 +564,41 @@ private fun MetricRow(label: String, value: String, accentColor: Color) {
 private fun ConfusionMatrixCard(
     modelName: String,
     metrics: ModelEvaluationMetrics,
-    accentColor: Color,
-    modifier: Modifier = Modifier
+    accentColor: Color
 ) {
     Card(
-        modifier = modifier,
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        modifier  = Modifier.fillMaxWidth(),
+        shape     = RoundedCornerShape(12.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Column(
-            modifier = Modifier.padding(10.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
+            modifier            = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text(
-                text = "Confusion Matrix $modelName",
-                style = MaterialTheme.typography.labelSmall,
+                text       = "Confusion Matrix — $modelName",
+                style      = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.SemiBold,
-                color = accentColor
+                color      = accentColor
             )
-
-            // Header row
             Row(modifier = Modifier.fillMaxWidth()) {
-                Spacer(Modifier.weight(1.2f))
-                Text("Pred +", modifier = Modifier.weight(1f), style = MaterialTheme.typography.labelSmall, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("Pred -", modifier = Modifier.weight(1f), style = MaterialTheme.typography.labelSmall, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.weight(1.5f))
+                Text("Prediksi +", Modifier.weight(1f), style = MaterialTheme.typography.labelSmall, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Prediksi −", Modifier.weight(1f), style = MaterialTheme.typography.labelSmall, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-
-            // TP / FN row
             Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text("Act +", modifier = Modifier.weight(1.2f), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                MatrixCell(value = metrics.truePositives, color = Green500, modifier = Modifier.weight(1f))
-                MatrixCell(value = metrics.falseNegatives, color = Color(0xFFE53935), modifier = Modifier.weight(1f))
+                Text("Aktual +", Modifier.weight(1.5f), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                MatrixCell(metrics.truePositives,  Green500,          Modifier.weight(1f))
+                MatrixCell(metrics.falseNegatives, Color(0xFFE53935), Modifier.weight(1f))
             }
-
-            // FP / TN row
             Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text("Act -", modifier = Modifier.weight(1.2f), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                MatrixCell(value = metrics.falsePositives, color = Color(0xFFE53935), modifier = Modifier.weight(1f))
-                MatrixCell(value = metrics.trueNegatives, color = Green500, modifier = Modifier.weight(1f))
+                Text("Aktual −", Modifier.weight(1.5f), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                MatrixCell(metrics.falsePositives, Color(0xFFE53935), Modifier.weight(1f))
+                MatrixCell(metrics.trueNegatives,  Green500,          Modifier.weight(1f))
             }
-
-            // Legend
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                LegendDot(color = Green500, label = "Benar")
-                LegendDot(color = Color(0xFFE53935), label = "Salah")
+            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                LegendDot(Green500,          "TP / TN — benar")
+                LegendDot(Color(0xFFE53935), "FP / FN — salah")
             }
         }
     }
@@ -569,260 +608,116 @@ private fun ConfusionMatrixCard(
 private fun MatrixCell(value: Int, color: Color, modifier: Modifier = Modifier) {
     Box(
         modifier = modifier
-            .aspectRatio(1.2f)
-            .padding(2.dp)
-            .background(color.copy(alpha = 0.15f), RoundedCornerShape(4.dp))
-            .border(1.dp, color.copy(alpha = 0.4f), RoundedCornerShape(4.dp)),
+            .aspectRatio(1.5f)
+            .padding(3.dp)
+            .background(color.copy(alpha = 0.13f), RoundedCornerShape(6.dp))
+            .border(1.dp, color.copy(alpha = 0.4f), RoundedCornerShape(6.dp)),
         contentAlignment = Alignment.Center
     ) {
         Text(
-            text = value.toString(),
-            style = MaterialTheme.typography.labelMedium,
+            text       = value.toString(),
+            style      = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.Bold,
-            color = color
+            color      = color
         )
     }
 }
 
 @Composable
 private fun LegendDot(color: Color, label: String) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         Box(modifier = Modifier.size(8.dp).background(color, RoundedCornerShape(2.dp)))
         Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
 @Composable
-private fun InferenceTimeCard(
-    cnnMetrics: ModelEvaluationMetrics,
-    rfMetrics: ModelEvaluationMetrics
+private fun LatencyCard(
+    metrics: ModelEvaluationMetrics,
+    modelName: String,
+    accentColor: Color
 ) {
-    val cnnColor = MaterialTheme.colorScheme.primary
-    val rfColor = Purple500
-    val maxTime = maxOf(cnnMetrics.avgInferenceTimeMs, rfMetrics.avgInferenceTimeMs).toFloat().coerceAtLeast(1f)
-    val faster = if (cnnMetrics.avgInferenceTimeMs <= rfMetrics.avgInferenceTimeMs) "CNN-1D" else "Random Forest"
-    val fasterColor = if (cnnMetrics.avgInferenceTimeMs <= rfMetrics.avgInferenceTimeMs) cnnColor else rfColor
-
     Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
+        modifier  = Modifier.fillMaxWidth(),
+        shape     = RoundedCornerShape(12.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Column(
-            modifier = Modifier.padding(14.dp),
+            modifier            = Modifier.padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Text(
-                text = "Perbandingan Inference Time",
-                style = MaterialTheme.typography.titleSmall,
+                text       = "Latensi Inferensi — $modelName",
+                style      = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold
             )
-
-            // CNN bar
-            InferenceBar(
-                modelName = "CNN-1D",
-                avgMs = cnnMetrics.avgInferenceTimeMs,
-                totalMs = cnnMetrics.totalInferenceTimeMs,
-                fraction = (cnnMetrics.avgInferenceTimeMs / maxTime).toFloat(),
-                color = cnnColor
-            )
-
-            // RF bar
-            InferenceBar(
-                modelName = "Random Forest",
-                avgMs = rfMetrics.avgInferenceTimeMs,
-                totalMs = rfMetrics.totalInferenceTimeMs,
-                fraction = (rfMetrics.avgInferenceTimeMs / maxTime).toFloat(),
-                color = rfColor
-            )
-
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(fasterColor.copy(alpha = 0.08f), RoundedCornerShape(6.dp))
-                    .padding(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Center
+                modifier              = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Icon(Icons.Default.Speed, contentDescription = null, tint = fasterColor, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    text = "$faster lebih cepat (${"%.1f".format(
-                        if (faster == "CNN-1D") rfMetrics.avgInferenceTimeMs - cnnMetrics.avgInferenceTimeMs
-                        else cnnMetrics.avgInferenceTimeMs - rfMetrics.avgInferenceTimeMs
-                    )} ms)",
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = fasterColor
-                )
+                LatencyBox("Rata-rata / URL",  "${"%.3f".format(metrics.avgInferenceTimeMs)} ms",  accentColor, Modifier.weight(1f))
+                LatencyBox("Total semua URL",  "${"%.2f".format(metrics.totalInferenceTimeMs)} ms", accentColor, Modifier.weight(1f))
             }
         }
     }
 }
 
 @Composable
-private fun InferenceBar(
-    modelName: String,
-    avgMs: Double,
-    totalMs: Long,
-    fraction: Float,
-    color: Color
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Text(modelName, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold, color = color)
-            Text(
-                text = "avg ${"%.1f".format(avgMs)} ms | total ${totalMs} ms",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(12.dp)
-                .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(6.dp))
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth(fraction.coerceIn(0.05f, 1f))
-                    .fillMaxHeight()
-                    .background(color, RoundedCornerShape(6.dp))
-            )
-        }
+private fun LatencyBox(label: String, value: String, accentColor: Color, modifier: Modifier = Modifier) {
+    Column(
+        modifier            = modifier
+            .background(accentColor.copy(alpha = 0.09f), RoundedCornerShape(8.dp))
+            .padding(10.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(2.dp)
+    ) {
+        Text(value, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = accentColor)
+        Text(label, style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
     }
 }
 
 @Composable
-private fun UrlResultRow(result: UrlTestResult, isEven: Boolean) {
-    var showFeatures by remember { mutableStateOf(false) }
+private fun UrlResultRow(
+    result: SingleModelTestResult,
+    isEven: Boolean,
+    showLexical: Boolean
+) {
+    var expanded by remember { mutableStateOf(false) }
     val rowBg = if (isEven) MaterialTheme.colorScheme.surface
                 else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
 
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(rowBg)
-    ) {
+    Column(modifier = Modifier.fillMaxWidth().background(rowBg)) {
         Row(
-            modifier = Modifier
+            modifier          = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 8.dp, vertical = 5.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Domain + expand toggle
             Column(modifier = Modifier.weight(2.5f)) {
                 Text(
-                    text = result.url,
-                    style = MaterialTheme.typography.labelSmall,
+                    text     = result.url,
+                    style    = MaterialTheme.typography.labelSmall,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                if (result.rfLexicalFeatures != null) {
+                if (showLexical && result.lexicalFeatures != null) {
                     Text(
-                        text = if (showFeatures) "▲ sembunyikan fitur" else "▼ lihat fitur RF",
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
-                        color = Purple500,
-                        modifier = Modifier.clickable { showFeatures = !showFeatures }
+                        text     = if (expanded) "▲ sembunyikan fitur" else "▼ lihat fitur RF",
+                        style    = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+                        color    = Purple500,
+                        modifier = Modifier.clickable { expanded = !expanded }
                     )
                 }
             }
-            LabelBadge(isAdult = result.groundTruth, modifier = Modifier.weight(1.2f))
-            PredictionBadge(
-                predicted = result.cnnPrediction, correct = result.cnnCorrect,
-                score = result.cnnScore, timeMs = result.cnnTimeMs,
-                modifier = Modifier.weight(1.5f)
-            )
-            PredictionBadge(
-                predicted = result.rfPrediction, correct = result.rfCorrect,
-                score = result.rfScore, timeMs = result.rfTimeMs,
-                modifier = Modifier.weight(1.5f)
-            )
+            LabelBadge(result.groundTruth, Modifier.weight(1.2f))
+            PredictionBadge(result.prediction, result.correct, result.score, result.inferenceTimeMs, Modifier.weight(1.8f))
         }
-
-        // Panel fitur leksikal RF — tampil untuk SEMUA URL (aman maupun adult)
-        if (showFeatures && result.rfLexicalFeatures != null) {
-            EvalLexicalFeaturesPanel(
-                features = result.rfLexicalFeatures,
-                isPornographic = result.groundTruth,
+        if (expanded && showLexical && result.lexicalFeatures != null) {
+            LexicalFeaturesPanel(
+                features = result.lexicalFeatures,
                 modifier = Modifier.padding(start = 8.dp, end = 8.dp, bottom = 6.dp)
             )
-        }
-    }
-}
-
-@Composable
-private fun EvalLexicalFeaturesPanel(
-    features: com.lawanpmo.autoblocklist.data.model.LexicalFeatures,
-    isPornographic: Boolean,
-    modifier: Modifier = Modifier
-) {
-    val labelColor = if (isPornographic) Color(0xFFE53935) else Green500
-    val labelText  = if (isPornographic) "PORNOGRAFI" else "AMAN"
-
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .background(Purple500.copy(alpha = 0.06f), RoundedCornerShape(6.dp))
-            .border(1.dp, Purple500.copy(alpha = 0.2f), RoundedCornerShape(6.dp))
-            .padding(8.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "Fitur Leksikal RF",
-                style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.Bold,
-                color = Purple500
-            )
-            Text(
-                text = labelText,
-                style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.Bold,
-                color = labelColor,
-                modifier = Modifier
-                    .background(labelColor.copy(alpha = 0.12f), RoundedCornerShape(3.dp))
-                    .padding(horizontal = 5.dp, vertical = 2.dp)
-            )
-        }
-
-        val rows = listOf(
-            Triple("1. Panjang Domain",      features.domainLength.toString(),                         false),
-            Triple("2. Jumlah Angka",         features.numDigits.toString(),                            false),
-            Triple("3. Jumlah Titik",         features.numDots.toString(),                              false),
-            Triple("4. Jumlah Delimiter",     features.numDelimiters.toString(),                        false),
-            Triple("5. Kata Mencurigakan",    "${features.suspiciousWordCount} kata",                    features.suspiciousWordCount > 0),
-            Triple("6. Rasio Angka/Huruf",   "%.3f".format(features.digitToLetterRatio),               false),
-            Triple("7. Max Digit Berurutan",  "${features.maxSequentialDigits} digit",                  features.maxSequentialDigits > 0)
-        )
-
-        rows.chunked(2).forEach { pair ->
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                pair.forEach { (label, value, isRed) ->
-                    Row(
-                        modifier = Modifier.weight(1f),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(label, style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text(value, style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
-                            fontWeight = FontWeight.SemiBold,
-                            color = if (isRed && value == "Ada") Color(0xFFE53935)
-                                    else MaterialTheme.colorScheme.onSurface)
-                    }
-                }
-                if (pair.size == 1) Spacer(modifier = Modifier.weight(1f))
-            }
         }
     }
 }
@@ -832,9 +727,9 @@ private fun LabelBadge(isAdult: Boolean, modifier: Modifier = Modifier) {
     val color = if (isAdult) Color(0xFFE53935) else Green500
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
         Text(
-            text = if (isAdult) "Adult" else "Aman",
-            style = MaterialTheme.typography.labelSmall,
-            color = color,
+            text       = if (isAdult) "Adult" else "Aman",
+            style      = MaterialTheme.typography.labelSmall,
+            color      = color,
             fontWeight = FontWeight.SemiBold
         )
     }
@@ -845,36 +740,72 @@ private fun PredictionBadge(
     predicted: Boolean,
     correct: Boolean,
     score: Float,
-    timeMs: Long,
+    timeMs: Double,
     modifier: Modifier = Modifier
 ) {
-    val bgColor = if (correct) Green500.copy(alpha = 0.12f) else Color(0xFFE53935).copy(alpha = 0.12f)
+    val bgColor   = if (correct) Green500.copy(alpha = 0.12f) else Color(0xFFE53935).copy(alpha = 0.12f)
     val textColor = if (correct) Green500 else Color(0xFFE53935)
-
     Column(
-        modifier = modifier.padding(horizontal = 2.dp),
+        modifier            = modifier.padding(horizontal = 2.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Box(
-            modifier = Modifier
+            modifier         = Modifier
                 .fillMaxWidth()
                 .background(bgColor, RoundedCornerShape(3.dp))
                 .padding(vertical = 2.dp),
             contentAlignment = Alignment.Center
         ) {
             Text(
-                text = if (predicted) "Adult" else "Aman",
-                style = MaterialTheme.typography.labelSmall,
-                color = textColor,
+                text       = if (predicted) "Adult" else "Aman",
+                style      = MaterialTheme.typography.labelSmall,
+                color      = textColor,
                 fontWeight = FontWeight.SemiBold
             )
         }
         Text(
-            text = "${"%.0f".format(score * 100)}% · ${timeMs}ms",
-            style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            text      = "${"%.0f".format(score * 100)}% · ${"%.2f".format(timeMs)}ms",
+            style     = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+            color     = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center
         )
+    }
+}
+
+@Composable
+private fun LexicalFeaturesPanel(
+    features: LexicalFeatures,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(Purple500.copy(alpha = 0.06f), RoundedCornerShape(6.dp))
+            .border(1.dp, Purple500.copy(alpha = 0.2f), RoundedCornerShape(6.dp))
+            .padding(8.dp),
+        verticalArrangement = Arrangement.spacedBy(3.dp)
+    ) {
+        Text("Fitur Leksikal RF", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = Purple500)
+        val rows = listOf(
+            "1. Panjang Domain"    to features.domainLength.toString(),
+            "2. Jumlah Angka"      to features.numDigits.toString(),
+            "3. Jumlah Titik"      to features.numDots.toString(),
+            "4. Jumlah Delimiter"  to features.numDelimiters.toString(),
+            "5. Kata Mencurigakan" to "${features.suspiciousWordCount} kata",
+            "6. Rasio Angka/Huruf" to "%.3f".format(features.digitToLetterRatio),
+            "7. Max Digit Berurut" to "${features.maxSequentialDigits} digit"
+        )
+        rows.chunked(2).forEach { pair ->
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                pair.forEach { (label, value) ->
+                    Row(modifier = Modifier.weight(1f), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text(label, style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(value, style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp), fontWeight = FontWeight.SemiBold)
+                    }
+                }
+                if (pair.size == 1) Spacer(modifier = Modifier.weight(1f))
+            }
+        }
     }
 }
 
@@ -893,42 +824,40 @@ private fun AddUrlDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(
-                    value = urlText,
+                    value         = urlText,
                     onValueChange = { urlText = it.trim() },
-                    label = { Text("Domain (contoh: google.com)") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(8.dp)
+                    label         = { Text("Domain (contoh: google.com)") },
+                    singleLine    = true,
+                    modifier      = Modifier.fillMaxWidth(),
+                    shape         = RoundedCornerShape(8.dp)
                 )
-
                 Text("Label Ground Truth:", style = MaterialTheme.typography.bodySmall)
-
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier              = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     FilterChip(
                         selected = !isAdult,
-                        onClick = { isAdult = false },
-                        label = { Text("Aman") },
+                        onClick  = { isAdult = false },
+                        label    = { Text("Aman") },
                         leadingIcon = if (!isAdult) {
-                            { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
+                            { Icon(Icons.Default.Check, null, modifier = Modifier.size(16.dp)) }
                         } else null,
                         colors = FilterChipDefaults.filterChipColors(
                             selectedContainerColor = Green500.copy(alpha = 0.2f),
-                            selectedLabelColor = Green500
+                            selectedLabelColor     = Green500
                         )
                     )
                     FilterChip(
                         selected = isAdult,
-                        onClick = { isAdult = true },
-                        label = { Text("Adult") },
+                        onClick  = { isAdult = true },
+                        label    = { Text("Adult") },
                         leadingIcon = if (isAdult) {
-                            { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
+                            { Icon(Icons.Default.Check, null, modifier = Modifier.size(16.dp)) }
                         } else null,
                         colors = FilterChipDefaults.filterChipColors(
                             selectedContainerColor = Color(0xFFE53935).copy(alpha = 0.2f),
-                            selectedLabelColor = Color(0xFFE53935)
+                            selectedLabelColor     = Color(0xFFE53935)
                         )
                     )
                 }
@@ -938,16 +867,12 @@ private fun AddUrlDialog(
             Button(
                 onClick = {
                     val cleaned = urlText
-                        .removePrefix("https://")
-                        .removePrefix("http://")
-                        .removePrefix("www.")
+                        .removePrefix("https://").removePrefix("http://").removePrefix("www.")
                         .trimEnd('/')
                     if (cleaned.isNotBlank()) onAdd(cleaned, isAdult)
                 },
                 enabled = urlText.isNotBlank()
-            ) {
-                Text("Tambah")
-            }
+            ) { Text("Tambah") }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Batal") }

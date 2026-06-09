@@ -124,28 +124,27 @@ class UrlClassifier @Inject constructor(
             return UrlClassificationResult.error(url)
         }
 
-        val startTime = System.currentTimeMillis()
+        val startNs = System.nanoTime()
 
         return try {
             val fullDomain = normalizeDomain(url)
-            
+
             // Validate if input is a real domain (not a search query)
             if (!isDomainValid(fullDomain)) {
                 Log.d(TAG, "⏭️  Skipped '$fullDomain' - not a valid domain (search query?)")
                 return UrlClassificationResult(
                     score = 0.0f,
                     isAdult = false,
-                    inferenceTimeMs = System.currentTimeMillis() - startTime,
+                    inferenceTimeMs = (System.nanoTime() - startNs) / 1_000_000.0,
                     domain = fullDomain,
                     skipped = true
                 )
             }
-            
-            val domainName = extractMainDomainName(fullDomain)
 
-            Log.d(TAG, "Domain extraction: '$fullDomain' → '$domainName'")
-
-            val tokens = tokenize(domainName)
+            // Gunakan domain penuh (setelah strip protokol/www.) — sesuai format training dataset
+            // Contoh: play.google.com → play.google.com (bukan hanya "google")
+            //         pornhub.tahu.bulat.com → pornhub.tahu.bulat.com (kata "pornhub" tetap ada)
+            val tokens = tokenize(fullDomain)
             val inputBuffer = prepareInputBuffer(tokens)
             val outputBuffer = ByteBuffer.allocateDirect(4).order(ByteOrder.nativeOrder())
 
@@ -153,17 +152,17 @@ class UrlClassifier @Inject constructor(
 
             outputBuffer.rewind()
             val score = outputBuffer.float
-            val inferenceTime = System.currentTimeMillis() - startTime
+            val inferenceTime = (System.nanoTime() - startNs) / 1_000_000.0
             val isAdult = score > threshold
 
-            Log.d(TAG, "Classified '$fullDomain' (name='$domainName'): score=${"%.4f".format(score)}, isAdult=$isAdult, time=${inferenceTime}ms")
+            Log.d(TAG, "Classified '$fullDomain': score=${"%.4f".format(score)}, isAdult=$isAdult, time=${"%.3f".format(inferenceTime)}ms")
 
             UrlClassificationResult(
                 score = score,
                 isAdult = isAdult,
                 inferenceTimeMs = inferenceTime,
                 domain = fullDomain,
-                extractedDomainName = domainName
+                extractedDomainName = fullDomain
             )
         } catch (e: Exception) {
             Log.e(TAG, "Classification error for: $url", e)

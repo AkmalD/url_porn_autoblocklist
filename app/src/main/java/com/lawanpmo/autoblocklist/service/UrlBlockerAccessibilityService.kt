@@ -349,7 +349,7 @@ class UrlBlockerAccessibilityService : AccessibilityService() {
 
             val record = BlockedDomainRecord(
                 domain = result.domain,
-                detectionTimeMs = result.inferenceTimeMs,
+                detectionTimeMs = result.inferenceTimeMs.toLong(),
                 modelUsed = currentActiveModel.name,
                 score = result.score,
                 lexicalFeatures = result.lexicalFeatures
@@ -426,7 +426,7 @@ class UrlBlockerAccessibilityService : AccessibilityService() {
         score: Float,
         isAdult: Boolean,
         model: String,
-        inferenceTimeMs: Long,
+        inferenceTimeMs: Double,
         lexicalFeatures: LexicalFeatures? = null
     ) {
         try {

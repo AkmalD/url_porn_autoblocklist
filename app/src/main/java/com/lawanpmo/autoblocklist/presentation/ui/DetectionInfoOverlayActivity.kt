@@ -70,7 +70,7 @@ class DetectionInfoOverlayActivity : ComponentActivity() {
         val score = intent.getFloatExtra(EXTRA_SCORE, 0f)
         val isAdult = intent.getBooleanExtra(EXTRA_IS_ADULT, false)
         val model = intent.getStringExtra(EXTRA_MODEL) ?: "-"
-        val inferenceTimeMs = intent.getLongExtra(EXTRA_INFERENCE_TIME_MS, 0L)
+        val inferenceTimeMs = intent.getDoubleExtra(EXTRA_INFERENCE_TIME_MS, 0.0)
         val lexicalFeatures: LexicalFeatures? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             intent.getParcelableExtra(EXTRA_LEXICAL_FEATURES, LexicalFeatures::class.java)
         } else {
@@ -134,7 +134,7 @@ class DetectionInfoOverlayActivity : ComponentActivity() {
                             Divider()
                             InfoRow("Model", model)
                             Divider()
-                            InfoRow("Waktu Inferensi", "${inferenceTimeMs} ms")
+                            InfoRow("Waktu Inferensi", "${"%.2f".format(inferenceTimeMs)} ms")
                             Divider()
                             InfoRow(
                                 label = "Hasil",

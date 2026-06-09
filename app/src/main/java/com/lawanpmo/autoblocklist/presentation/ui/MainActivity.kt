@@ -53,8 +53,6 @@ class MainActivity : ComponentActivity() {
                 ) {
                     if (showEvaluation) {
                         EvaluationScreen(
-                            cnnClassifier = cnnClassifier,
-                            rfClassifier = rfClassifier,
                             onBack = { showEvaluation = false }
                         )
                     } else {

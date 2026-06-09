@@ -8,7 +8,7 @@ import com.lawanpmo.autoblocklist.data.model.LexicalFeatures
 data class UrlClassificationResult(
     val score: Float,
     val isAdult: Boolean,
-    val inferenceTimeMs: Long,
+    val inferenceTimeMs: Double,
     val domain: String,
     val skipped: Boolean = false,
     val lexicalFeatures: LexicalFeatures? = null,  // Hanya untuk Random Forest
@@ -18,7 +18,7 @@ data class UrlClassificationResult(
         fun error(domain: String) = UrlClassificationResult(
             score = 0f,
             isAdult = false,
-            inferenceTimeMs = 0,
+            inferenceTimeMs = 0.0,
             domain = domain,
             skipped = false
         )

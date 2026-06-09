@@ -84,14 +84,14 @@ class RandomForestClassifier @Inject constructor(
 
     @Synchronized
     override fun classify(url: String): UrlClassificationResult {
-        val startTime = System.currentTimeMillis()
+        val startNs = System.nanoTime()
         val fullDomain = normalizeDomain(url)
 
         if (!isDomainValid(fullDomain)) {
             return UrlClassificationResult(
                 score = 0.0f,
                 isAdult = false,
-                inferenceTimeMs = System.currentTimeMillis() - startTime,
+                inferenceTimeMs = (System.nanoTime() - startNs) / 1_000_000.0,
                 domain = fullDomain,
                 skipped = true
             )
@@ -111,7 +111,7 @@ class RandomForestClassifier @Inject constructor(
             return UrlClassificationResult(
                 score = 0f,
                 isAdult = false,
-                inferenceTimeMs = System.currentTimeMillis() - startTime,
+                inferenceTimeMs = (System.nanoTime() - startNs) / 1_000_000.0,
                 domain = fullDomain,
                 lexicalFeatures = features
             )
@@ -131,10 +131,10 @@ class RandomForestClassifier @Inject constructor(
                 outputBuffer.float
             }
 
-            val inferenceTime = System.currentTimeMillis() - startTime
+            val inferenceTime = (System.nanoTime() - startNs) / 1_000_000.0
             val isAdult = score > DEFAULT_THRESHOLD
 
-            Log.d(TAG, "RF '$fullDomain' → score=${"%.4f".format(score)} isAdult=$isAdult time=${inferenceTime}ms")
+            Log.d(TAG, "RF '$fullDomain' → score=${"%.4f".format(score)} isAdult=$isAdult time=${"%.3f".format(inferenceTime)}ms")
 
             UrlClassificationResult(
                 score = score,
@@ -149,7 +149,7 @@ class RandomForestClassifier @Inject constructor(
             UrlClassificationResult(
                 score = 0f,
                 isAdult = false,
-                inferenceTimeMs = System.currentTimeMillis() - startTime,
+                inferenceTimeMs = (System.nanoTime() - startNs) / 1_000_000.0,
                 domain = fullDomain,
                 lexicalFeatures = features
             )
