@@ -6,9 +6,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -29,7 +29,6 @@ import com.lawanpmo.autoblocklist.data.model.*
 import com.lawanpmo.autoblocklist.presentation.ui.theme.Green500
 import com.lawanpmo.autoblocklist.presentation.ui.theme.Purple500
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -39,9 +38,10 @@ fun EvaluationScreen(onBack: () -> Unit) {
 
     val context      = LocalContext.current.applicationContext
     val primaryColor = MaterialTheme.colorScheme.primary
+    val scope        = rememberCoroutineScope()
 
     var selectedModel by remember { mutableStateOf(EvalModelChoice.CNN_1D) }
-    var testUrls      by remember { mutableStateOf(DEFAULT_TEST_URLS.toMutableList()) }
+    val testUrls      = remember { mutableStateListOf(*DEFAULT_TEST_URLS.toTypedArray()) }
     var results       by remember { mutableStateOf<List<SingleModelTestResult>?>(null) }
     var evaluatedWith by remember { mutableStateOf<EvalModelChoice?>(null) }
     var isRunning     by remember { mutableStateOf(false) }
@@ -57,7 +57,7 @@ fun EvaluationScreen(onBack: () -> Unit) {
     if (showAddDialog) {
         AddUrlDialog(
             onAdd = { url, isAdult ->
-                testUrls = (testUrls + TestUrlItem(url, isAdult)).toMutableList()
+                testUrls.add(TestUrlItem(url, isAdult))
                 showAddDialog = false
             },
             onDismiss = { showAddDialog = false }
@@ -92,17 +92,18 @@ fun EvaluationScreen(onBack: () -> Unit) {
             )
         }
     ) { paddingValues ->
-        LazyColumn(
+        Column(
             modifier            = Modifier
                 .fillMaxSize()
+                .verticalScroll(rememberScrollState())
                 .padding(paddingValues)
-                .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-            contentPadding      = PaddingValues(vertical = 16.dp)
+                .padding(horizontal = 16.dp)
+                .padding(vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
 
             // ── Pilih Model ──────────────────────────────────────────────────
-            item {
+            Column {
                 SectionHeader("Pilih Model", null)
                 Spacer(Modifier.height(8.dp))
                 ModelSelector(
@@ -118,181 +119,172 @@ fun EvaluationScreen(onBack: () -> Unit) {
             }
 
             // ── Dataset ──────────────────────────────────────────────────────
-            item {
-                SectionHeader(
-                    title = "Dataset Uji",
-                    badge = "${testUrls.size} URL  •  ${testUrls.count { it.isAdult }} Adult  •  ${testUrls.count { !it.isAdult }} Aman"
-                )
-            }
+            SectionHeader(
+                title = "Dataset Uji",
+                badge = "${testUrls.size} URL  •  ${testUrls.count { it.isAdult }} Adult  •  ${testUrls.count { !it.isAdult }} Aman"
+            )
 
-            itemsIndexed(testUrls) { index, item ->
+            testUrls.forEachIndexed { index, item ->
                 TestUrlRow(
                     item          = item,
                     enabled       = !isRunning,
                     onDelete      = {
-                        testUrls = testUrls.toMutableList().also { it.removeAt(index) }
-                        results  = null
+                        testUrls.removeAt(index)
+                        results = null
                     },
                     onToggleLabel = { newIsAdult ->
-                        testUrls = testUrls.toMutableList().also { list ->
-                            list[index] = item.copy(isAdult = newIsAdult)
-                        }
+                        testUrls[index] = item.copy(isAdult = newIsAdult)
                         results = null
                     }
                 )
             }
 
-            item {
-                Row(
-                    modifier              = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+            Row(
+                modifier              = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(
+                    onClick  = { showAddDialog = true },
+                    enabled  = !isRunning,
+                    modifier = Modifier.weight(1f),
+                    shape    = RoundedCornerShape(8.dp)
                 ) {
-                    OutlinedButton(
-                        onClick  = { showAddDialog = true },
-                        enabled  = !isRunning,
-                        modifier = Modifier.weight(1f),
-                        shape    = RoundedCornerShape(8.dp)
-                    ) {
-                        Icon(Icons.Default.Add, null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("Tambah URL")
-                    }
-                    OutlinedButton(
-                        onClick  = {
-                            testUrls     = DEFAULT_TEST_URLS.toMutableList()
-                            results      = null
-                            errorMessage = null
-                        },
-                        enabled  = !isRunning,
-                        modifier = Modifier.weight(1f),
-                        shape    = RoundedCornerShape(8.dp)
-                    ) {
-                        Icon(Icons.Default.Refresh, null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("Reset")
-                    }
+                    Icon(Icons.Default.Add, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Tambah URL")
+                }
+                OutlinedButton(
+                    onClick  = {
+                        testUrls.clear()
+                        testUrls.addAll(DEFAULT_TEST_URLS)
+                        results      = null
+                        errorMessage = null
+                    },
+                    enabled  = !isRunning,
+                    modifier = Modifier.weight(1f),
+                    shape    = RoundedCornerShape(8.dp)
+                ) {
+                    Icon(Icons.Default.Refresh, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Reset")
                 }
             }
 
             // ── Tombol Evaluasi ───────────────────────────────────────────────
-            item {
-                Button(
-                    onClick  = {
-                        if (isRunning || testUrls.isEmpty()) return@Button
-                        val chosen     = selectedModel
-                        val snapshot   = testUrls.toList()
-                        val modelPaths = when (chosen) {
-                            EvalModelChoice.CNN_1D        -> listOf("url_classifier.tflite", "CNN1D.tflite")
-                            EvalModelChoice.RANDOM_FOREST -> listOf("url_classifier_rf.tflite", "RandomForest.tflite")
-                        }
-
-                        // Instance dibuat fresh per-evaluasi dan TIDAK disimpan di remember.
-                        // release() dipanggil di finally setelah semua inferensi selesai,
-                        // sehingga tidak ada race condition antara release() dan classify().
-                        GlobalScope.launch(Dispatchers.Main) {
-                            isRunning    = true
-                            errorMessage = null
-                            results      = null
-
-                            val classifier = when (chosen) {
-                                EvalModelChoice.CNN_1D        -> UrlClassifier(context)
-                                EvalModelChoice.RANDOM_FOREST -> RandomForestClassifier(context)
-                            }
-
-                            try {
-                                val loaded = withContext(Dispatchers.IO) {
-                                    modelPaths.any { path -> classifier.loadModel(path) }
-                                }
-                                if (!loaded) {
-                                    errorMessage = "Gagal memuat model. Pastikan file .tflite ada di assets."
-                                    return@launch
-                                }
-
-                                val res = withContext(Dispatchers.IO) {
-                                    snapshot.map { item ->
-                                        val r = classifier.classify(item.url)
-                                        SingleModelTestResult(
-                                            url             = item.url,
-                                            groundTruth     = item.isAdult,
-                                            prediction      = r.isAdult,
-                                            score           = r.score,
-                                            inferenceTimeMs = r.inferenceTimeMs,
-                                            lexicalFeatures = r.lexicalFeatures
-                                        )
-                                    }
-                                }
-
-                                results       = res
-                                evaluatedWith = chosen
-                            } catch (e: Exception) {
-                                errorMessage = "Error: ${e.message ?: "tidak diketahui"}"
-                            } finally {
-                                // Selalu release setelah inferensi selesai, tanpa ada
-                                // thread lain yang bisa mengakses instance ini
-                                try { classifier.release() } catch (_: Exception) {}
-                                isRunning = false
-                            }
-                        }
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(52.dp),
-                    shape    = RoundedCornerShape(12.dp),
-                    enabled  = !isRunning && testUrls.isNotEmpty(),
-                    colors   = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary
-                    )
-                ) {
-                    if (isRunning) {
-                        CircularProgressIndicator(
-                            modifier    = Modifier.size(20.dp),
-                            color       = MaterialTheme.colorScheme.onPrimary,
-                            strokeWidth = 2.dp
-                        )
-                        Spacer(Modifier.width(10.dp))
-                        Text(
-                            text       = "Mengevaluasi...",
-                            style      = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    } else {
-                        Icon(Icons.Default.PlayArrow, null, modifier = Modifier.size(22.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            text       = "Mulai Evaluasi",
-                            style      = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.SemiBold
-                        )
+            Button(
+                onClick  = {
+                    if (isRunning || testUrls.isEmpty()) return@Button
+                    val chosen     = selectedModel
+                    val snapshot   = testUrls.toList()
+                    val modelPaths = when (chosen) {
+                        EvalModelChoice.CNN_1D        -> listOf("url_classifier.tflite", "CNN1D.tflite")
+                        EvalModelChoice.RANDOM_FOREST -> listOf("url_classifier_rf.tflite", "RandomForest.tflite")
                     }
+
+                    // Instance dibuat fresh per-evaluasi dan TIDAK disimpan di remember.
+                    // release() dipanggil di finally setelah semua inferensi selesai,
+                    // sehingga tidak ada race condition antara release() dan classify().
+                    scope.launch {
+                        isRunning    = true
+                        errorMessage = null
+                        results      = null
+
+                        val classifier = when (chosen) {
+                            EvalModelChoice.CNN_1D        -> UrlClassifier(context)
+                            EvalModelChoice.RANDOM_FOREST -> RandomForestClassifier(context)
+                        }
+
+                        try {
+                            val loaded = withContext(Dispatchers.IO) {
+                                modelPaths.any { path -> classifier.loadModel(path) }
+                            }
+                            if (!loaded) {
+                                errorMessage = "Gagal memuat model. Pastikan file .tflite ada di assets."
+                                return@launch
+                            }
+
+                            val res = withContext(Dispatchers.IO) {
+                                snapshot.map { item ->
+                                    val r = classifier.classify(item.url)
+                                    SingleModelTestResult(
+                                        url             = item.url,
+                                        groundTruth     = item.isAdult,
+                                        prediction      = r.isAdult,
+                                        score           = r.score,
+                                        inferenceTimeMs = r.inferenceTimeMs,
+                                        lexicalFeatures = r.lexicalFeatures
+                                    )
+                                }
+                            }
+
+                            results       = res
+                            evaluatedWith = chosen
+                        } catch (e: Throwable) {
+                            errorMessage = "Error: ${e.message ?: e::class.simpleName ?: "tidak diketahui"}"
+                        } finally {
+                            // Selalu release setelah inferensi selesai, tanpa ada
+                            // thread lain yang bisa mengakses instance ini
+                            try { classifier.release() } catch (_: Exception) {}
+                            isRunning = false
+                        }
+                    }
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp),
+                shape    = RoundedCornerShape(12.dp),
+                enabled  = !isRunning && testUrls.isNotEmpty(),
+                colors   = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primary
+                )
+            ) {
+                if (isRunning) {
+                    CircularProgressIndicator(
+                        modifier    = Modifier.size(20.dp),
+                        color       = MaterialTheme.colorScheme.onPrimary,
+                        strokeWidth = 2.dp
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        text       = "Mengevaluasi...",
+                        style      = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                } else {
+                    Icon(Icons.Default.PlayArrow, null, modifier = Modifier.size(22.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text       = "Mulai Evaluasi",
+                        style      = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold
+                    )
                 }
             }
 
             // ── Error ─────────────────────────────────────────────────────────
             if (errorMessage != null) {
-                item {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape    = RoundedCornerShape(10.dp),
-                        colors   = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.errorContainer
-                        )
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape    = RoundedCornerShape(10.dp),
+                    colors   = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.errorContainer
+                    )
+                ) {
+                    Row(
+                        modifier              = Modifier.padding(12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment     = Alignment.CenterVertically
                     ) {
-                        Row(
-                            modifier              = Modifier.padding(12.dp),
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                            verticalAlignment     = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                Icons.Default.Error, null,
-                                tint     = MaterialTheme.colorScheme.error,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Text(
-                                text  = errorMessage!!,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onErrorContainer
-                            )
-                        }
+                        Icon(
+                            Icons.Default.Error, null,
+                            tint     = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Text(
+                            text  = errorMessage!!,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
                     }
                 }
             }
@@ -302,8 +294,8 @@ fun EvaluationScreen(onBack: () -> Unit) {
                 val modelLabel  = if (evaluatedWith == EvalModelChoice.CNN_1D) "CNN-1D" else "Random Forest"
                 val accentColor = if (evaluatedWith == EvalModelChoice.CNN_1D) primaryColor else Purple500
 
-                item {
-                    Divider()
+                Column {
+                    HorizontalDivider()
                     Spacer(Modifier.height(4.dp))
                     SectionHeader(
                         title = "Hasil Evaluasi — $modelLabel",
@@ -311,32 +303,30 @@ fun EvaluationScreen(onBack: () -> Unit) {
                     )
                 }
 
-                item { ModelMetricsCard(modelLabel, metrics, accentColor) }
+                ModelMetricsCard(modelLabel, metrics, accentColor)
 
-                item { ConfusionMatrixCard(modelLabel, metrics, accentColor) }
+                ConfusionMatrixCard(modelLabel, metrics, accentColor)
 
-                item { LatencyCard(metrics, modelLabel, accentColor) }
+                LatencyCard(metrics, modelLabel, accentColor)
 
-                item { SectionHeader("Detail per URL", null) }
+                SectionHeader("Detail per URL", null)
 
-                item {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(
-                                MaterialTheme.colorScheme.surfaceVariant,
-                                RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp)
-                            )
-                            .padding(horizontal = 8.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Domain",   Modifier.weight(2.5f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-                        Text("Label",    Modifier.weight(1.2f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
-                        Text("Prediksi", Modifier.weight(1.8f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
-                    }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(
+                            MaterialTheme.colorScheme.surfaceVariant,
+                            RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp)
+                        )
+                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Domain",   Modifier.weight(2.5f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                    Text("Label",    Modifier.weight(1.2f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+                    Text("Prediksi", Modifier.weight(1.8f), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
                 }
 
-                itemsIndexed(results!!) { index, result ->
+                results!!.forEachIndexed { index, result ->
                     UrlResultRow(
                         result      = result,
                         isEven      = index % 2 == 0,
@@ -344,7 +334,7 @@ fun EvaluationScreen(onBack: () -> Unit) {
                     )
                 }
 
-                item { Spacer(Modifier.height(24.dp)) }
+                Spacer(Modifier.height(24.dp))
             }
         }
     }
@@ -531,7 +521,7 @@ private fun ModelMetricsCard(
                 fontWeight = FontWeight.Bold,
                 color      = accentColor
             )
-            Divider(color = accentColor.copy(alpha = 0.25f))
+            HorizontalDivider(color = accentColor.copy(alpha = 0.25f))
             Row(
                 modifier              = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(6.dp)

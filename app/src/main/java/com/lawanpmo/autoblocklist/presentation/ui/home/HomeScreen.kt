@@ -23,8 +23,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Lock
@@ -713,14 +711,17 @@ private fun HistoryModal(
                 
                 Divider()
                 
-                // Scrollable list
-                LazyColumn(
+                // Scrollable list — Column+verticalScroll karena LazyColumn di dalam
+                // AlertDialog (Popup/SubcomposeLayout) menyebabkan crash Compose
+                // "pending composition has not been applied"
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(max = 400.dp),
+                        .heightIn(max = 400.dp)
+                        .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    items(allBlockedRecords) { record ->
+                    allBlockedRecords.forEach { record ->
                         HistoryRecordItem(record)
                     }
                 }

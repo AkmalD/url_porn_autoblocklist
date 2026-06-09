@@ -110,7 +110,7 @@ class UrlClassifier @Inject constructor(
             Log.d(TAG, "   Model MAX_LEN: $modelInputLen | Code MAX_LEN: $MAX_LEN")
 
             true
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.e(TAG, "❌ Failed to load CNN-1D classifier model", e)
             false
         }

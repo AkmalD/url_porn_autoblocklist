@@ -76,7 +76,7 @@ class RandomForestClassifier @Inject constructor(
             Log.d(TAG, "   Input : ${inputShape.contentToString()} → $modelInputElements elements")
             Log.d(TAG, "   Output: ${outputShape.contentToString()} → $modelOutputElements elements")
             true
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.e(TAG, "❌ Failed to load RF model", e)
             false
         }
