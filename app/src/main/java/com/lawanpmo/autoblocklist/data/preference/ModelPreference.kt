@@ -18,6 +18,8 @@ class ModelPreference @Inject constructor(
         private const val PREF_NAME = "model_preference"
         private const val KEY_MODEL_TYPE = "selected_model_type"
         private const val KEY_DETECTION_ENABLED = "detection_enabled"
+        private const val KEY_CNN_FILE = "selected_cnn_file"
+        private const val KEY_RF_FILE = "selected_rf_file"
     }
 
     private val prefs: SharedPreferences = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
@@ -39,6 +41,16 @@ class ModelPreference @Inject constructor(
      */
     fun setSelectedModel(modelType: MLModelType) {
         prefs.edit().putString(KEY_MODEL_TYPE, modelType.name).apply()
+    }
+
+    fun getSelectedModelFile(type: MLModelType): String? {
+        val key = if (type == MLModelType.CNN_1D) KEY_CNN_FILE else KEY_RF_FILE
+        return prefs.getString(key, null)
+    }
+
+    fun setSelectedModelFile(type: MLModelType, fileName: String) {
+        val key = if (type == MLModelType.CNN_1D) KEY_CNN_FILE else KEY_RF_FILE
+        prefs.edit().putString(key, fileName).apply()
     }
 
     fun isDetectionEnabled(): Boolean {

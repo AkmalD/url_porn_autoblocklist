@@ -59,7 +59,7 @@ class MainActivity : ComponentActivity() {
                         HomeScreen(
                             blocklistRepository = blocklistRepository,
                             modelPreference = modelPreference,
-                            onModelSelected = { modelType -> handleModelSelection(modelType) },
+                            onModelSelected = { modelType, fileName -> handleModelSelection(modelType, fileName) },
                             onNavigateToEvaluation = { showEvaluation = true }
                         )
                     }
@@ -76,18 +76,19 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun handleModelSelection(modelType: MLModelType) {
-        Log.i(TAG, "User selected model: ${modelType.name}")
+    private fun handleModelSelection(modelType: MLModelType, fileName: String) {
+        Log.i(TAG, "User selected model: ${modelType.name}/$fileName")
         modelPreference.setSelectedModel(modelType)
-        switchModelInService(modelType)
+        modelPreference.setSelectedModelFile(modelType, fileName)
+        switchModelInService(modelType, fileName)
     }
 
-    private fun switchModelInService(modelType: MLModelType) {
+    private fun switchModelInService(modelType: MLModelType, fileName: String) {
         GlobalScope.launch(Dispatchers.Main) {
             try {
                 val service = getRunningAccessibilityService()
                 if (service != null) {
-                    val success = service.switchClassificationModel(modelType)
+                    val success = service.switchClassificationModel(modelType, fileName)
                     Log.i(TAG, if (success) "✅ Model switched in service" else "⚠️ Model switch failed")
                 } else {
                     Log.d(TAG, "Service not running — preference saved, will apply on next start")

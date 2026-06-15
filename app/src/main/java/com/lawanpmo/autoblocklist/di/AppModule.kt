@@ -30,8 +30,9 @@ object ClassifierModule {
     @Singleton
     fun provideClassifierManager(
         cnnClassifier: UrlClassifier,
-        rfClassifier: RandomForestClassifier
+        rfClassifier: RandomForestClassifier,
+        @ApplicationContext context: Context
     ): ClassifierManager {
-        return ClassifierManager(cnnClassifier, rfClassifier)
+        return ClassifierManager(cnnClassifier, rfClassifier, context)
     }
 }

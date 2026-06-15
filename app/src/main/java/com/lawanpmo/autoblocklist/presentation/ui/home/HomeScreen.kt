@@ -22,6 +22,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
@@ -83,13 +85,30 @@ import com.lawanpmo.autoblocklist.service.UrlBlockerAccessibilityService
 fun HomeScreen(
     blocklistRepository: BlocklistRepository? = null,
     modelPreference: ModelPreference? = null,
-    onModelSelected: (MLModelType) -> Unit = {},
+    onModelSelected: (MLModelType, String) -> Unit = { _, _ -> },
     onNavigateToEvaluation: () -> Unit = {}
 ) {
     val context = LocalContext.current
     var isServiceEnabled by remember { mutableStateOf(false) }
     var isDetectionEnabled by remember { mutableStateOf(modelPreference?.isDetectionEnabled() ?: true) }
-    var selectedModel by remember { mutableStateOf(MLModelType.CNN_1D) }
+    var selectedModel by remember { mutableStateOf(modelPreference?.getSelectedModel() ?: MLModelType.CNN_1D) }
+
+    // Discover available model files per folder
+    val cnnFiles = remember {
+        try { (context.assets.list("cnn") ?: emptyArray()).filter { it.endsWith(".tflite") }.sorted() }
+        catch (e: Exception) { emptyList() }
+    }
+    val rfFiles = remember {
+        try { (context.assets.list("rf") ?: emptyArray()).filter { it.endsWith(".tflite") }.sorted() }
+        catch (e: Exception) { emptyList() }
+    }
+
+    var selectedCnnFile by remember {
+        mutableStateOf(modelPreference?.getSelectedModelFile(MLModelType.CNN_1D) ?: cnnFiles.firstOrNull() ?: "")
+    }
+    var selectedRfFile by remember {
+        mutableStateOf(modelPreference?.getSelectedModelFile(MLModelType.RANDOM_FOREST) ?: rfFiles.firstOrNull() ?: "")
+    }
     var blockedHistory by remember { mutableStateOf(emptyList<com.lawanpmo.autoblocklist.data.model.BlockedDomainRecord>()) }
     var blocklistStats by remember { mutableStateOf(com.lawanpmo.autoblocklist.data.model.BlocklistStatistics.empty()) }
     var showHistoryModal by remember { mutableStateOf(false) }
@@ -172,7 +191,7 @@ fun HomeScreen(
                     isSelected = selectedModel == MLModelType.CNN_1D,
                     onClick = {
                         selectedModel = MLModelType.CNN_1D
-                        onModelSelected(MLModelType.CNN_1D)
+                        onModelSelected(MLModelType.CNN_1D, selectedCnnFile)
                     },
                     modifier = Modifier.weight(1f),
                     accentColor = MaterialTheme.colorScheme.primary
@@ -183,14 +202,32 @@ fun HomeScreen(
                     isSelected = selectedModel == MLModelType.RANDOM_FOREST,
                     onClick = {
                         selectedModel = MLModelType.RANDOM_FOREST
-                        onModelSelected(MLModelType.RANDOM_FOREST)
+                        onModelSelected(MLModelType.RANDOM_FOREST, selectedRfFile)
                     },
                     modifier = Modifier.weight(1f),
                     accentColor = Purple500
                 )
             }
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // File selector for active model type
+            val activeFiles = if (selectedModel == MLModelType.CNN_1D) cnnFiles else rfFiles
+            val activeFile = if (selectedModel == MLModelType.CNN_1D) selectedCnnFile else selectedRfFile
+            val activeColor = if (selectedModel == MLModelType.CNN_1D) MaterialTheme.colorScheme.primary else Purple500
+
+            ModelFileSelector(
+                files = activeFiles,
+                selectedFile = activeFile,
+                accentColor = activeColor,
+                onFileSelected = { file ->
+                    if (selectedModel == MLModelType.CNN_1D) selectedCnnFile = file
+                    else selectedRfFile = file
+                    onModelSelected(selectedModel, file)
+                }
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
 
             // Model Statistics
             ModelStatsCard(
@@ -401,6 +438,66 @@ fun HomeScreen(
                 textAlign = TextAlign.Center,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+        }
+    }
+}
+
+@Composable
+private fun ModelFileSelector(
+    files: List<String>,
+    selectedFile: String,
+    accentColor: Color,
+    onFileSelected: (String) -> Unit
+) {
+    if (files.isEmpty()) return
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = "File Model",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(bottom = 8.dp)
+        )
+        LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items(files) { file ->
+                val isSelected = file == selectedFile
+                val displayName = file.removeSuffix(".tflite")
+                Card(
+                    modifier = Modifier.clickable { onFileSelected(file) },
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (isSelected) accentColor.copy(alpha = 0.15f)
+                                         else MaterialTheme.colorScheme.surface
+                    ),
+                    border = androidx.compose.foundation.BorderStroke(
+                        width = if (isSelected) 2.dp else 1.dp,
+                        color = if (isSelected) accentColor else MaterialTheme.colorScheme.outlineVariant
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        if (isSelected) {
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                modifier = Modifier.size(14.dp),
+                                tint = accentColor
+                            )
+                        }
+                        Text(
+                            text = displayName,
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                            color = if (isSelected) accentColor else MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+            }
         }
     }
 }

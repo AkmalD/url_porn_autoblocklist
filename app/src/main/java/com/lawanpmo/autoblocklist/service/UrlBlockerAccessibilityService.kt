@@ -63,6 +63,7 @@ class UrlBlockerAccessibilityService : AccessibilityService() {
     private var isClassifierReady = false
     private var isDetectionEnabled = true
     private var currentActiveModel: MLModelType = MLModelType.CNN_1D
+    private var currentActiveModelFile: String = ""
     private var preferenceCheckJob: Job? = null
 
     // Supported browsers
@@ -166,14 +167,16 @@ class UrlBlockerAccessibilityService : AccessibilityService() {
         // Load model based on preference
         serviceScope.launch {
             val preferredModel = modelPreference.getSelectedModel()
-            Log.i(TAG, "Loading preferred model: ${preferredModel.name}")
+            val preferredFile = modelPreference.getSelectedModelFile(preferredModel)
+            Log.i(TAG, "Loading preferred model: ${preferredModel.name}/$preferredFile")
 
             isDetectionEnabled = modelPreference.isDetectionEnabled()
             Log.i(TAG, "Detection enabled: $isDetectionEnabled")
 
-            isClassifierReady = classifierManager.switchModel(preferredModel)
+            isClassifierReady = classifierManager.switchModel(preferredModel, preferredFile)
             currentActiveModel = preferredModel
-            Log.i(TAG, "Classifier ready: $isClassifierReady with model: ${currentActiveModel.name}")
+            currentActiveModelFile = classifierManager.getCurrentModelFile()
+            Log.i(TAG, "Classifier ready: $isClassifierReady with model: ${currentActiveModel.name}/$currentActiveModelFile")
 
             // Start observing preference changes
             startPreferenceObserver()
@@ -190,11 +193,13 @@ class UrlBlockerAccessibilityService : AccessibilityService() {
             while (isActive) {
                 try {
                     val savedModel = modelPreference.getSelectedModel()
-                    if (savedModel != currentActiveModel) {
-                        Log.w(TAG, "Model preference changed: ${currentActiveModel.name} → ${savedModel.name}")
-                        classifierManager.switchModel(savedModel)
+                    val savedFile = modelPreference.getSelectedModelFile(savedModel)
+                    if (savedModel != currentActiveModel || savedFile != currentActiveModelFile) {
+                        Log.w(TAG, "Model preference changed: ${currentActiveModel.name}/$currentActiveModelFile → ${savedModel.name}/$savedFile")
+                        classifierManager.switchModel(savedModel, savedFile)
                         currentActiveModel = savedModel
-                        Log.i(TAG, "✅ Model auto-switched based on preference")
+                        currentActiveModelFile = classifierManager.getCurrentModelFile()
+                        Log.i(TAG, "✅ Model auto-switched to: ${currentActiveModel.name}/$currentActiveModelFile")
                     }
 
                     val detectionEnabled = modelPreference.isDetectionEnabled()
@@ -560,12 +565,14 @@ class UrlBlockerAccessibilityService : AccessibilityService() {
      * Called from HomeScreen when user selects different model.
      * This is a suspend function - call it from a coroutine.
      */
-    suspend fun switchClassificationModel(modelType: MLModelType): Boolean {
+    suspend fun switchClassificationModel(modelType: MLModelType, fileName: String? = null): Boolean {
         return try {
-            val success = classifierManager.switchModel(modelType)
+            val success = classifierManager.switchModel(modelType, fileName)
             if (success) {
                 isClassifierReady = true
-                Log.i(TAG, "✅ Model switched successfully in service")
+                currentActiveModel = modelType
+                currentActiveModelFile = classifierManager.getCurrentModelFile()
+                Log.i(TAG, "✅ Model switched successfully in service: ${modelType.name}/$currentActiveModelFile")
             } else {
                 Log.e(TAG, "❌ Failed to switch model in service")
             }

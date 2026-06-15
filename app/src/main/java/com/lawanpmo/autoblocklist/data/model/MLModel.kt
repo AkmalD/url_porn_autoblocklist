@@ -9,6 +9,17 @@ enum class MLModelType {
 }
 
 /**
+ * Representasi file model yang tersedia di folder asset
+ */
+data class AvailableModel(
+    val type: MLModelType,
+    val fileName: String,
+    val assetPath: String
+) {
+    val displayName: String get() = fileName.removeSuffix(".tflite")
+}
+
+/**
  * Data class untuk statistik model ML
  */
 data class MLModelStats(
