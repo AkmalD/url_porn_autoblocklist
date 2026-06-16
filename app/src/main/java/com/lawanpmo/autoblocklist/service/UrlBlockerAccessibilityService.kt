@@ -10,6 +10,7 @@ import com.lawanpmo.autoblocklist.data.classifier.ClassifierManager
 import com.lawanpmo.autoblocklist.data.model.BlockedDomainRecord
 import com.lawanpmo.autoblocklist.data.model.LexicalFeatures
 import com.lawanpmo.autoblocklist.data.model.MLModelType
+import com.lawanpmo.autoblocklist.domain.repository.UrlClassificationResult
 import com.lawanpmo.autoblocklist.data.preference.ModelPreference
 import com.lawanpmo.autoblocklist.data.repository.BlocklistRepository
 import com.lawanpmo.autoblocklist.presentation.ui.BlockOverlayActivity
@@ -361,7 +362,7 @@ class UrlBlockerAccessibilityService : AccessibilityService() {
             )
             blocklistRepository.addBlockedDomain(record)
 
-            scheduleBlock(url)
+            scheduleBlock(result, currentActiveModel.name)
         } else {
             // URL is safe - cancel any pending block and show debug info overlay
             cancelPendingBlock()
@@ -390,17 +391,17 @@ class UrlBlockerAccessibilityService : AccessibilityService() {
         }
     }
 
-    private fun scheduleBlock(domain: String) {
+    private fun scheduleBlock(result: UrlClassificationResult, modelName: String) {
         pendingBlockJob?.cancel()
         pendingBlockJob = serviceScope.launch {
-            Log.d(TAG, "Scheduling block for: $domain")
+            Log.d(TAG, "Scheduling block for: ${result.domain}")
             delay(BLOCK_DELAY_MS)
-            executeBlock(domain)
+            executeBlock(result, modelName)
         }
     }
 
-    private fun executeBlock(domain: String) {
-        Log.d(TAG, "Executing block for: $domain")
+    private fun executeBlock(result: UrlClassificationResult, modelName: String) {
+        Log.d(TAG, "Executing block for: ${result.domain}")
 
         // Go to home screen FIRST to close browser
         performGlobalAction(GLOBAL_ACTION_HOME)
@@ -408,18 +409,25 @@ class UrlBlockerAccessibilityService : AccessibilityService() {
         // Show overlay activity after small delay (same as LawanPMO)
         serviceScope.launch {
             delay(100)
-            showBlockOverlay(domain)
+            showBlockOverlay(result, modelName)
         }
     }
 
-    private fun showBlockOverlay(domain: String) {
+    private fun showBlockOverlay(result: UrlClassificationResult, modelName: String) {
         try {
             val intent = Intent(this, BlockOverlayActivity::class.java).apply {
-                putExtra(BlockOverlayActivity.EXTRA_BLOCKED_DOMAIN, domain)
+                putExtra(BlockOverlayActivity.EXTRA_BLOCKED_DOMAIN, result.domain)
+                putExtra(BlockOverlayActivity.EXTRA_EXTRACTED_DOMAIN_NAME, result.extractedDomainName)
+                putExtra(BlockOverlayActivity.EXTRA_SCORE, result.score)
+                putExtra(BlockOverlayActivity.EXTRA_MODEL, modelName)
+                putExtra(BlockOverlayActivity.EXTRA_INFERENCE_TIME_MS, result.inferenceTimeMs)
+                if (result.lexicalFeatures != null) {
+                    putExtra(BlockOverlayActivity.EXTRA_LEXICAL_FEATURES, result.lexicalFeatures)
+                }
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
             }
             startActivity(intent)
-            Log.d(TAG, "Block overlay activity launched for: $domain")
+            Log.d(TAG, "Block overlay activity launched for: ${result.domain}")
         } catch (e: Exception) {
             Log.e(TAG, "Error launching overlay activity", e)
         }

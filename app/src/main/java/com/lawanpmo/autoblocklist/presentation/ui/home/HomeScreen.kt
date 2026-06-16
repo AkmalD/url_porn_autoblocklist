@@ -22,8 +22,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
@@ -41,16 +39,21 @@ import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.Analytics
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Divider
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.AlertDialog
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -81,6 +84,7 @@ import com.lawanpmo.autoblocklist.presentation.ui.theme.Orange500
 import com.lawanpmo.autoblocklist.presentation.ui.theme.Purple500
 import com.lawanpmo.autoblocklist.service.UrlBlockerAccessibilityService
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     blocklistRepository: BlocklistRepository? = null,
@@ -442,6 +446,7 @@ fun HomeScreen(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ModelFileSelector(
     files: List<String>,
@@ -451,52 +456,60 @@ private fun ModelFileSelector(
 ) {
     if (files.isEmpty()) return
 
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Text(
-            text = "File Model",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(bottom = 8.dp)
+    var expanded by remember { mutableStateOf(false) }
+
+    ExposedDropdownMenuBox(
+        expanded        = expanded,
+        onExpandedChange = { expanded = it },
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        OutlinedTextField(
+            value         = selectedFile.removeSuffix(".tflite"),
+            onValueChange = {},
+            readOnly      = true,
+            label         = { Text("File Model") },
+            trailingIcon  = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            colors        = ExposedDropdownMenuDefaults.outlinedTextFieldColors(
+                focusedBorderColor   = accentColor,
+                focusedLabelColor    = accentColor,
+                focusedTrailingIconColor = accentColor
+            ),
+            modifier = Modifier
+                .fillMaxWidth()
+                .menuAnchor(),
+            shape = RoundedCornerShape(10.dp)
         )
-        LazyRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ExposedDropdownMenu(
+            expanded        = expanded,
+            onDismissRequest = { expanded = false }
         ) {
-            items(files) { file ->
-                val isSelected = file == selectedFile
+            files.forEach { file ->
+                val isSelected  = file == selectedFile
                 val displayName = file.removeSuffix(".tflite")
-                Card(
-                    modifier = Modifier.clickable { onFileSelected(file) },
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = if (isSelected) accentColor.copy(alpha = 0.15f)
-                                         else MaterialTheme.colorScheme.surface
-                    ),
-                    border = androidx.compose.foundation.BorderStroke(
-                        width = if (isSelected) 2.dp else 1.dp,
-                        color = if (isSelected) accentColor else MaterialTheme.colorScheme.outlineVariant
-                    )
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        if (isSelected) {
-                            Icon(
-                                imageVector = Icons.Default.CheckCircle,
-                                contentDescription = null,
-                                modifier = Modifier.size(14.dp),
-                                tint = accentColor
+                DropdownMenuItem(
+                    text = {
+                        Row(
+                            verticalAlignment     = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            if (isSelected) {
+                                Icon(
+                                    imageVector        = Icons.Default.CheckCircle,
+                                    contentDescription = null,
+                                    modifier           = Modifier.size(16.dp),
+                                    tint               = accentColor
+                                )
+                            }
+                            Text(
+                                text       = displayName,
+                                style      = MaterialTheme.typography.bodySmall,
+                                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                color      = if (isSelected) accentColor else MaterialTheme.colorScheme.onSurface
                             )
                         }
-                        Text(
-                            text = displayName,
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                            color = if (isSelected) accentColor else MaterialTheme.colorScheme.onSurface
-                        )
-                    }
-                }
+                    },
+                    onClick = { onFileSelected(file); expanded = false }
+                )
             }
         }
     }

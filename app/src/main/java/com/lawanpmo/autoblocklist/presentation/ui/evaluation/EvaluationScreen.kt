@@ -16,7 +16,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -40,18 +39,34 @@ fun EvaluationScreen(onBack: () -> Unit) {
     val primaryColor = MaterialTheme.colorScheme.primary
     val scope        = rememberCoroutineScope()
 
-    var selectedModel by remember { mutableStateOf(EvalModelChoice.CNN_1D) }
+    val availableModels = remember {
+        val cnn = try {
+            (context.assets.list("cnn") ?: emptyArray())
+                .filter { it.endsWith(".tflite") }
+                .sorted()
+                .map { AvailableModel(MLModelType.CNN_1D, it, "cnn/$it") }
+        } catch (_: Exception) { emptyList() }
+        val rf = try {
+            (context.assets.list("rf") ?: emptyArray())
+                .filter { it.endsWith(".tflite") }
+                .sorted()
+                .map { AvailableModel(MLModelType.RANDOM_FOREST, it, "rf/$it") }
+        } catch (_: Exception) { emptyList() }
+        cnn + rf
+    }
+
+    var selectedModel by remember(availableModels) {
+        mutableStateOf(availableModels.firstOrNull())
+    }
     val testUrls      = remember { mutableStateListOf(*DEFAULT_TEST_URLS.toTypedArray()) }
     var results       by remember { mutableStateOf<List<SingleModelTestResult>?>(null) }
-    var evaluatedWith by remember { mutableStateOf<EvalModelChoice?>(null) }
+    var evaluatedWith by remember { mutableStateOf<AvailableModel?>(null) }
     var isRunning     by remember { mutableStateOf(false) }
     var errorMessage  by remember { mutableStateOf<String?>(null) }
     var showAddDialog by remember { mutableStateOf(false) }
 
     val metrics = results?.let { ModelEvaluationMetrics.fromResults(it) }
 
-    // Blokir tombol back saat evaluasi berjalan agar tidak memicu release()
-    // sementara TFLite masih berjalan di IO thread
     BackHandler(enabled = isRunning) { /* abaikan back saat running */ }
 
     if (showAddDialog) {
@@ -106,7 +121,8 @@ fun EvaluationScreen(onBack: () -> Unit) {
             Column {
                 SectionHeader("Pilih Model", null)
                 Spacer(Modifier.height(8.dp))
-                ModelSelector(
+                ModelDropdown(
+                    models   = availableModels,
                     selected = selectedModel,
                     enabled  = !isRunning,
                     onSelect = {
@@ -173,33 +189,26 @@ fun EvaluationScreen(onBack: () -> Unit) {
             // ── Tombol Evaluasi ───────────────────────────────────────────────
             Button(
                 onClick  = {
+                    val chosen = selectedModel ?: return@Button
                     if (isRunning || testUrls.isEmpty()) return@Button
-                    val chosen     = selectedModel
-                    val snapshot   = testUrls.toList()
-                    val modelPaths = when (chosen) {
-                        EvalModelChoice.CNN_1D        -> listOf("url_classifier.tflite", "CNN1D.tflite")
-                        EvalModelChoice.RANDOM_FOREST -> listOf("url_classifier_rf.tflite", "RandomForest.tflite")
-                    }
+                    val snapshot = testUrls.toList()
 
-                    // Instance dibuat fresh per-evaluasi dan TIDAK disimpan di remember.
-                    // release() dipanggil di finally setelah semua inferensi selesai,
-                    // sehingga tidak ada race condition antara release() dan classify().
                     scope.launch {
                         isRunning    = true
                         errorMessage = null
                         results      = null
 
-                        val classifier = when (chosen) {
-                            EvalModelChoice.CNN_1D        -> UrlClassifier(context)
-                            EvalModelChoice.RANDOM_FOREST -> RandomForestClassifier(context)
+                        val classifier = when (chosen.type) {
+                            MLModelType.CNN_1D        -> UrlClassifier(context)
+                            MLModelType.RANDOM_FOREST -> RandomForestClassifier(context)
                         }
 
                         try {
                             val loaded = withContext(Dispatchers.IO) {
-                                modelPaths.any { path -> classifier.loadModel(path) }
+                                classifier.loadModel(chosen.assetPath)
                             }
                             if (!loaded) {
-                                errorMessage = "Gagal memuat model. Pastikan file .tflite ada di assets."
+                                errorMessage = "Gagal memuat model: ${chosen.assetPath}"
                                 return@launch
                             }
 
@@ -222,8 +231,6 @@ fun EvaluationScreen(onBack: () -> Unit) {
                         } catch (e: Throwable) {
                             errorMessage = "Error: ${e.message ?: e::class.simpleName ?: "tidak diketahui"}"
                         } finally {
-                            // Selalu release setelah inferensi selesai, tanpa ada
-                            // thread lain yang bisa mengakses instance ini
                             try { classifier.release() } catch (_: Exception) {}
                             isRunning = false
                         }
@@ -233,7 +240,7 @@ fun EvaluationScreen(onBack: () -> Unit) {
                     .fillMaxWidth()
                     .height(52.dp),
                 shape    = RoundedCornerShape(12.dp),
-                enabled  = !isRunning && testUrls.isNotEmpty(),
+                enabled  = !isRunning && testUrls.isNotEmpty() && selectedModel != null,
                 colors   = ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.primary
                 )
@@ -291,8 +298,9 @@ fun EvaluationScreen(onBack: () -> Unit) {
 
             // ── Hasil Evaluasi ────────────────────────────────────────────────
             if (results != null && metrics != null && evaluatedWith != null) {
-                val modelLabel  = if (evaluatedWith == EvalModelChoice.CNN_1D) "CNN-1D" else "Random Forest"
-                val accentColor = if (evaluatedWith == EvalModelChoice.CNN_1D) primaryColor else Purple500
+                val isCnn       = evaluatedWith!!.type == MLModelType.CNN_1D
+                val modelLabel  = evaluatedWith!!.fileName.removeSuffix(".tflite")
+                val accentColor = if (isCnn) primaryColor else Purple500
 
                 Column {
                     HorizontalDivider()
@@ -330,7 +338,7 @@ fun EvaluationScreen(onBack: () -> Unit) {
                     UrlResultRow(
                         result      = result,
                         isEven      = index % 2 == 0,
-                        showLexical = evaluatedWith == EvalModelChoice.RANDOM_FOREST
+                        showLexical = evaluatedWith!!.type == MLModelType.RANDOM_FOREST
                     )
                 }
 
@@ -342,87 +350,99 @@ fun EvaluationScreen(onBack: () -> Unit) {
 
 // ─── Sub-composables ──────────────────────────────────────────────────────────
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ModelSelector(
-    selected: EvalModelChoice,
+private fun ModelDropdown(
+    models: List<AvailableModel>,
+    selected: AvailableModel?,
     enabled: Boolean,
-    onSelect: (EvalModelChoice) -> Unit
+    onSelect: (AvailableModel) -> Unit
 ) {
-    val primaryColor = MaterialTheme.colorScheme.primary
-    Row(
-        modifier              = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        ModelSelectorCard(
-            label       = "CNN-1D",
-            subtitle    = "Berbasis karakter domain",
-            icon        = Icons.Default.Psychology,
-            selected    = selected == EvalModelChoice.CNN_1D,
-            enabled     = enabled,
-            accentColor = primaryColor,
-            modifier    = Modifier.weight(1f),
-            onClick     = { onSelect(EvalModelChoice.CNN_1D) }
-        )
-        ModelSelectorCard(
-            label       = "Random Forest",
-            subtitle    = "7 fitur leksikal",
-            icon        = Icons.Default.AccountTree,
-            selected    = selected == EvalModelChoice.RANDOM_FOREST,
-            enabled     = enabled,
-            accentColor = Purple500,
-            modifier    = Modifier.weight(1f),
-            onClick     = { onSelect(EvalModelChoice.RANDOM_FOREST) }
-        )
-    }
-}
+    var expanded by remember { mutableStateOf(false) }
 
-@Composable
-private fun ModelSelectorCard(
-    label: String,
-    subtitle: String,
-    icon: ImageVector,
-    selected: Boolean,
-    enabled: Boolean,
-    accentColor: Color,
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit
-) {
-    val effectiveAccent = if (enabled) accentColor else accentColor.copy(alpha = 0.4f)
-    Card(
-        modifier = modifier.clickable(enabled = enabled, onClick = onClick),
-        shape    = RoundedCornerShape(10.dp),
-        colors   = CardDefaults.cardColors(
-            containerColor = if (selected) effectiveAccent.copy(alpha = 0.10f)
-                             else MaterialTheme.colorScheme.surface
-        ),
-        border = BorderStroke(
-            width = if (selected) 2.dp else 1.dp,
-            color = if (selected) effectiveAccent else MaterialTheme.colorScheme.outlineVariant
-        )
+    ExposedDropdownMenuBox(
+        expanded        = expanded && enabled,
+        onExpandedChange = { if (enabled) expanded = it },
+        modifier = Modifier.fillMaxWidth()
     ) {
-        Row(
-            modifier              = Modifier.padding(12.dp),
-            verticalAlignment     = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        OutlinedTextField(
+            value         = selected?.let {
+                "[${if (it.type == MLModelType.CNN_1D) "CNN-1D" else "RF"}] ${it.fileName}"
+            } ?: "Tidak ada model tersedia",
+            onValueChange = {},
+            readOnly      = true,
+            enabled       = enabled,
+            label         = { Text("Model") },
+            trailingIcon  = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded && enabled) },
+            colors        = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
+            modifier      = Modifier
+                .fillMaxWidth()
+                .menuAnchor(),
+            shape         = RoundedCornerShape(10.dp)
+        )
+        ExposedDropdownMenu(
+            expanded        = expanded && enabled,
+            onDismissRequest = { expanded = false }
         ) {
-            Icon(
-                imageVector        = icon,
-                contentDescription = null,
-                tint     = if (selected) effectiveAccent else MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(22.dp)
-            )
-            Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
-                Text(
-                    text       = label,
-                    style      = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Bold,
-                    color      = if (selected) effectiveAccent else MaterialTheme.colorScheme.onSurface
+            val cnnModels = models.filter { it.type == MLModelType.CNN_1D }
+            val rfModels  = models.filter { it.type == MLModelType.RANDOM_FOREST }
+
+            if (cnnModels.isNotEmpty()) {
+                DropdownMenuItem(
+                    text    = { Text("── CNN-1D ──", style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold) },
+                    onClick = {},
+                    enabled = false
                 )
-                Text(
-                    text  = subtitle,
-                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                cnnModels.forEach { model ->
+                    DropdownMenuItem(
+                        text = {
+                            Row(
+                                verticalAlignment     = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(Icons.Default.Psychology, null,
+                                    modifier = Modifier.size(16.dp),
+                                    tint = MaterialTheme.colorScheme.primary)
+                                Text(model.fileName, style = MaterialTheme.typography.bodySmall)
+                            }
+                        },
+                        onClick = { onSelect(model); expanded = false },
+                        colors  = MenuDefaults.itemColors(
+                            textColor = if (model == selected) MaterialTheme.colorScheme.primary
+                                        else MaterialTheme.colorScheme.onSurface
+                        )
+                    )
+                }
+            }
+            if (rfModels.isNotEmpty()) {
+                HorizontalDivider()
+                DropdownMenuItem(
+                    text    = { Text("── Random Forest ──", style = MaterialTheme.typography.labelSmall,
+                        color = Purple500, fontWeight = FontWeight.Bold) },
+                    onClick = {},
+                    enabled = false
                 )
+                rfModels.forEach { model ->
+                    DropdownMenuItem(
+                        text = {
+                            Row(
+                                verticalAlignment     = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(Icons.Default.AccountTree, null,
+                                    modifier = Modifier.size(16.dp),
+                                    tint = Purple500)
+                                Text(model.fileName, style = MaterialTheme.typography.bodySmall)
+                            }
+                        },
+                        onClick = { onSelect(model); expanded = false },
+                        colors  = MenuDefaults.itemColors(
+                            textColor = if (model == selected) Purple500
+                                        else MaterialTheme.colorScheme.onSurface
+                        )
+                    )
+                }
             }
         }
     }

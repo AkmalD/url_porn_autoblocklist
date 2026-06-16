@@ -275,7 +275,7 @@ class DetectionInfoOverlayActivity : ComponentActivity() {
 }
 
 @Composable
-private fun SectionCard(title: String, content: @Composable () -> Unit) {
+internal fun SectionCard(title: String, content: @Composable () -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
@@ -296,7 +296,7 @@ private fun SectionCard(title: String, content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun InfoRow(label: String, value: String, valueColor: Color = Color.Unspecified) {
+internal fun InfoRow(label: String, value: String, valueColor: Color = Color.Unspecified) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -320,7 +320,7 @@ private fun InfoRow(label: String, value: String, valueColor: Color = Color.Unsp
 }
 
 @Composable
-private fun FeatureTableHeader() {
+internal fun FeatureTableHeader() {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -334,7 +334,7 @@ private fun FeatureTableHeader() {
 }
 
 @Composable
-private fun FeatureRow(code: String, name: String, value: String, valueColor: Color = Color.Unspecified) {
+internal fun FeatureRow(code: String, name: String, value: String, valueColor: Color = Color.Unspecified) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -366,7 +366,7 @@ private fun FeatureRow(code: String, name: String, value: String, valueColor: Co
 }
 
 @Composable
-private fun LegendRow(code: String, name: String, description: String) {
+internal fun LegendRow(code: String, name: String, description: String) {
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
             text = code,
