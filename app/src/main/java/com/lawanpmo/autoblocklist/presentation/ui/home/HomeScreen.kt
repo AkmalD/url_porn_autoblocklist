@@ -572,13 +572,6 @@ private fun ModelSelectorCard(
                 color = accentColor
             )
 
-            Spacer(modifier = Modifier.height(4.dp))
-
-            Text(
-                text = "${model.accuracy.toInt()}%",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
         }
     }
 }

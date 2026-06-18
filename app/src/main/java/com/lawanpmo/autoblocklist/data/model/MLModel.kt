@@ -25,10 +25,6 @@ data class AvailableModel(
 data class MLModelStats(
     val type: MLModelType,
     val name: String,
-    val accuracy: Double,  // Dalam persen (0-100)
-    val detectionTimeMs: Long,  // Waktu deteksi dalam milliseconds
-    val precision: Double,  // Dalam persen (0-100)
-    val modelSizeKb: Int,  // Ukuran model dalam KB
     val description: String
 )
 
@@ -39,20 +35,12 @@ object MLModels {
     val CNN_1D = MLModelStats(
         type = MLModelType.CNN_1D,
         name = "CNN 1D",
-        accuracy = 96.69,
-        detectionTimeMs = 45,
-        precision = 99.20,
-        modelSizeKb = 280,
         description = "Convolutional Neural Network 1D untuk deteksi pola karakter domain"
     )
 
     val RANDOM_FOREST = MLModelStats(
         type = MLModelType.RANDOM_FOREST,
         name = "Random Forest",
-        accuracy = 94.52,
-        detectionTimeMs = 32,
-        precision = 97.85,
-        modelSizeKb = 156,
         description = "Ensemble learning dengan decision trees untuk klasifikasi domain"
     )
 
