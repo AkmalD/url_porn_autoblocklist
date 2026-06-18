@@ -24,12 +24,38 @@ class RandomForestClassifier @Inject constructor(
         private const val DEFAULT_THRESHOLD = 0.7f
         private const val NUM_FEATURES = 7
 
+        // HARUS identik dengan SUSPICIOUS_WORDS di feature_extraction.py (training/tuning).
+        // Daftar sudah dedup: jika sebuah kata adalah substring kata lain, hanya yang
+        // lebih pendek dipertahankan agar F5 (suspicious_word_count) tidak hitung-ganda.
         private val SUSPICIOUS_WORDS = setOf(
-            "porn", "sex", "xxx", "adult", "cam", "tube", "bokep", "hentai",
-            "nude", "gay", "lesbian", "erotic", "mature", "amateur",
-            "creampie", "milf", "bbw", "naked", "porno", "anal",
-            "pussy", "cock", "cumshot", "orgasm", "xvideos", "xnxx",
-            "xhamster", "redtube", "youporn", "brazzers", "onlyfans"
+            // --- Konten Eksplisit Umum ---
+            "porn", "xxx", "sex", "nude", "naked", "hentai", "erotic",
+            "fetish", "orgasm", "hardcore", "softcore",
+            // --- Bagian Tubuh / Istilah Seksual ---
+            "boobs", "tits", "bigtit", "bigass", "butt", "cock", "dick",
+            "penis", "pussy", "vagina", "anal", "anus", "clitoris",
+            "nipple", "breast",
+            // --- Aktivitas Seksual ---
+            "fuck", "blowjob", "handjob", "footjob", "gangbang", "threesome",
+            "orgy", "cumshot", "creampie", "masturbat", "fingering", "rimming",
+            "fisting", "squirt", "bdsm", "bondage", "spank", "whip", "dildo",
+            "vibrator", "deepthroat", "ejaculat", "intercourse", "brazzer",
+            "baise",  // Bahasa Prancis
+            // --- Kategori / Genre ---
+            "milf", "teen", "mature", "amateur", "lesbian", "gay", "shemale",
+            "tranny", "ladyboy", "interracial", "incest", "voyeur", "upskirt",
+            "escort", "prostitut", "hooker", "stripper", "webcam", "camgirl",
+            "livecam",
+            // --- Istilah Lainnya ---
+            "whore", "bitch", "naughty", "horny", "swinger", "adult",
+            "xvideos", "xnxx", "redtube", "xhamster", "freeport",
+            "jav",
+            "salope", "putain", "pute",  // Bahasa Prancis
+            "bukake", "bukkake", "memek", "ngentot", "kontol", "titit",
+            // Leet-speak umum
+            "p0rn", "s3x", "pr0n", "h3nt4i", "j4v",
+            // --- Tambahan khusus app (tidak ada di list Python, tanpa konflik substring) ---
+            "bokep", "bbw", "onlyfans"
         )
 
         private val COMMON_TLDS = setOf(
