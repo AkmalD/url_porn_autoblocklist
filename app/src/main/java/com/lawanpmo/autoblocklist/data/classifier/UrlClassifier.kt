@@ -237,25 +237,6 @@ class UrlClassifier @Inject constructor(
         return domain
     }
 
-    private fun extractMainDomainName(fullDomain: String): String {
-        val parts = fullDomain.split(".")
-
-        if (parts.size < 2) return fullDomain
-
-        if (parts.size >= 3) {
-            val potentialSecondLevelTld = "${parts[parts.size - 2]}.${parts.last()}"
-            if (potentialSecondLevelTld in SECOND_LEVEL_TLDS) {
-                return parts[parts.size - 3]
-            }
-        }
-
-        if (parts.last() in COMMON_TLDS) {
-            return parts[parts.size - 2]
-        }
-
-        return if (parts.size >= 2) parts[parts.size - 2] else fullDomain
-    }
-
     private fun tokenize(domain: String): IntArray {
         val len = modelInputLen
         val tokens = IntArray(len) { PAD_IDX }
