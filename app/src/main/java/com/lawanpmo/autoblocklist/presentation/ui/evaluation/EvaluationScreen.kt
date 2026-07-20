@@ -1,5 +1,6 @@
 package com.lawanpmo.autoblocklist.presentation.ui.evaluation
 
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -30,6 +31,17 @@ import com.lawanpmo.autoblocklist.presentation.ui.theme.Purple500
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+/** Jumlah inferensi "pembuangan" sebelum pengukuran untuk menghindari bias warm-up TFLite. */
+private const val WARMUP_RUNS = 5
+
+/** Median dari daftar waktu (lebih tahan outlier daripada rata-rata). */
+private fun medianOf(values: List<Double>): Double {
+    if (values.isEmpty()) return 0.0
+    val s = values.sorted()
+    val mid = s.size / 2
+    return if (s.size % 2 == 1) s[mid] else (s[mid - 1] + s[mid]) / 2.0
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -64,6 +76,8 @@ fun EvaluationScreen(onBack: () -> Unit) {
     var isRunning     by remember { mutableStateOf(false) }
     var errorMessage  by remember { mutableStateOf<String?>(null) }
     var showAddDialog by remember { mutableStateOf(false) }
+    var showImportDialog by remember { mutableStateOf(false) }
+    var repetitions   by remember { mutableStateOf(10) }   // ulang per URL, ambil median
 
     val metrics = results?.let { ModelEvaluationMetrics.fromResults(it) }
 
@@ -76,6 +90,19 @@ fun EvaluationScreen(onBack: () -> Unit) {
                 showAddDialog = false
             },
             onDismiss = { showAddDialog = false }
+        )
+    }
+
+    if (showImportDialog) {
+        ImportUrlsDialog(
+            onImport = { items, replace ->
+                if (replace) testUrls.clear()
+                testUrls.addAll(items)
+                results       = null
+                errorMessage  = null
+                showImportDialog = false
+            },
+            onDismiss = { showImportDialog = false }
         )
     }
 
@@ -167,7 +194,17 @@ fun EvaluationScreen(onBack: () -> Unit) {
                 ) {
                     Icon(Icons.Default.Add, null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text("Tambah URL")
+                    Text("Tambah")
+                }
+                OutlinedButton(
+                    onClick  = { showImportDialog = true },
+                    enabled  = !isRunning,
+                    modifier = Modifier.weight(1f),
+                    shape    = RoundedCornerShape(8.dp)
+                ) {
+                    Icon(Icons.Default.UploadFile, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Impor")
                 }
                 OutlinedButton(
                     onClick  = {
@@ -183,6 +220,27 @@ fun EvaluationScreen(onBack: () -> Unit) {
                     Icon(Icons.Default.Refresh, null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(4.dp))
                     Text("Reset")
+                }
+            }
+
+            // ── Pengulangan pengukuran ────────────────────────────────────────
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                SectionHeader("Pengulangan per URL", "median diambil")
+                Text(
+                    "Tiap URL diukur beberapa kali lalu diambil median-nya (lebih stabil). " +
+                    "Warm-up otomatis dijalankan sebelum pengukuran.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(1, 5, 10, 30).forEach { n ->
+                        FilterChip(
+                            selected = repetitions == n,
+                            onClick  = { if (!isRunning) repetitions = n },
+                            enabled  = !isRunning,
+                            label    = { Text("${n}×") }
+                        )
+                    }
                 }
             }
 
@@ -212,16 +270,33 @@ fun EvaluationScreen(onBack: () -> Unit) {
                                 return@launch
                             }
 
+                            val reps = repetitions.coerceAtLeast(1)
                             val res = withContext(Dispatchers.IO) {
+                                // ── WARM-UP ─────────────────────────────────
+                                // Buang beberapa inferensi pertama (alokasi tensor
+                                // + JIT TFLite) supaya semua waktu terukur bersih.
+                                snapshot.firstOrNull()?.let { warm ->
+                                    repeat(WARMUP_RUNS) { classifier.classify(warm.url) }
+                                }
+                                // ── PENGUKURAN ──────────────────────────────
                                 snapshot.map { item ->
-                                    val r = classifier.classify(item.url)
+                                    // Ulang N kali, ambil MEDIAN waktu (tahan outlier).
+                                    // Skor & prediksi deterministik → pakai run terakhir.
+                                    var last = classifier.classify(item.url)
+                                    val times = ArrayList<Double>(reps).apply {
+                                        add(last.inferenceTimeMs)
+                                    }
+                                    repeat(reps - 1) {
+                                        last = classifier.classify(item.url)
+                                        times.add(last.inferenceTimeMs)
+                                    }
                                     SingleModelTestResult(
                                         url             = item.url,
                                         groundTruth     = item.isAdult,
-                                        prediction      = r.isAdult,
-                                        score           = r.score,
-                                        inferenceTimeMs = r.inferenceTimeMs,
-                                        lexicalFeatures = r.lexicalFeatures
+                                        prediction      = last.isAdult,
+                                        score           = last.score,
+                                        inferenceTimeMs = medianOf(times),
+                                        lexicalFeatures = last.lexicalFeatures
                                     )
                                 }
                             }
@@ -308,6 +383,39 @@ fun EvaluationScreen(onBack: () -> Unit) {
                     SectionHeader(
                         title = "Hasil Evaluasi — $modelLabel",
                         badge = "${results!!.size} URL"
+                    )
+                }
+
+                Button(
+                    onClick = {
+                        val res = results ?: return@Button
+                        try {
+                            val csv  = EvaluationExport.buildCsv(res, modelLabel)
+                            val file = EvaluationExport.writeCsv(context, csv, modelLabel)
+                            Toast.makeText(
+                                context,
+                                "CSV tersimpan:\n${file.absolutePath}",
+                                Toast.LENGTH_LONG
+                            ).show()
+                            EvaluationExport.shareCsv(context, file)
+                        } catch (e: Exception) {
+                            Toast.makeText(
+                                context,
+                                "Gagal ekspor: ${e.message}",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    shape    = RoundedCornerShape(10.dp),
+                    colors   = ButtonDefaults.buttonColors(containerColor = accentColor)
+                ) {
+                    Icon(Icons.Default.Download, null, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text       = "Export CSV (simpan & bagikan)",
+                        style      = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold
                     )
                 }
 
@@ -883,6 +991,71 @@ private fun AddUrlDialog(
                 },
                 enabled = urlText.isNotBlank()
             ) { Text("Tambah") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Batal") }
+        }
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ImportUrlsDialog(
+    onImport: (items: List<TestUrlItem>, replace: Boolean) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var rawText by remember { mutableStateOf("") }
+    var replace by remember { mutableStateOf(true) }
+
+    val parsed = remember(rawText) { EvaluationExport.parseBulk(rawText) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Impor URL Massal") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    "Tempel daftar dari Excel/Sheet. Satu URL per baris, format:\n" +
+                    "url,label  —  label: 1/adult atau 0/aman (opsional).\n" +
+                    "Contoh:\npornhub.com,1\ngoogle.com,0\nkompas.com",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                OutlinedTextField(
+                    value         = rawText,
+                    onValueChange = { rawText = it },
+                    label         = { Text("Tempel di sini") },
+                    modifier      = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 140.dp, max = 240.dp),
+                    shape         = RoundedCornerShape(8.dp)
+                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Checkbox(checked = replace, onCheckedChange = { replace = it })
+                    Text(
+                        if (replace) "Ganti seluruh dataset" else "Tambahkan ke dataset",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+                if (parsed.isNotEmpty()) {
+                    Text(
+                        "Terbaca: ${parsed.size} URL  •  ${parsed.count { it.isAdult }} Adult  •  " +
+                        "${parsed.count { !it.isAdult }} Aman",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { if (parsed.isNotEmpty()) onImport(parsed, replace) },
+                enabled = parsed.isNotEmpty()
+            ) { Text("Impor ${parsed.size} URL") }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Batal") }

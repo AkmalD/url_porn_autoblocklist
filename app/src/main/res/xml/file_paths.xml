@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Folder tempat CSV hasil evaluasi disimpan: /Android/data/<pkg>/files/evaluasi -->
+    <external-files-path
+        name="evaluasi"
+        path="evaluasi/" />
+</paths>

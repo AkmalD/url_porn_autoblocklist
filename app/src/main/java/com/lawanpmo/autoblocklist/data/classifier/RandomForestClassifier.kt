@@ -21,7 +21,7 @@ class RandomForestClassifier @Inject constructor(
 
     companion object {
         private const val TAG = "RFClassifier"
-        private const val DEFAULT_THRESHOLD = 0.7f
+        private const val DEFAULT_THRESHOLD = 0.5f
         private const val NUM_FEATURES = 7
 
         // HARUS identik dengan SUSPICIOUS_WORDS di feature_extraction.py (training/tuning).

@@ -47,6 +47,17 @@
             android:taskAffinity=""
             android:launchMode="singleInstance" />
 
+        <!-- FileProvider untuk membagikan hasil evaluasi (CSV) -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
         <!-- Accessibility Service for URL Detection -->
         <service
             android:name=".service.UrlBlockerAccessibilityService"

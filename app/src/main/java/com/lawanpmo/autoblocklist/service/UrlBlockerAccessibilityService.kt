@@ -140,6 +140,12 @@ class UrlBlockerAccessibilityService : AccessibilityService() {
     private var lastUrlCheckTime = 0L
     private var pendingBlockJob: Job? = null
 
+    // Last safe URL that already showed the info overlay.
+    // Unlike lastDetectedUrl, this is NOT reset when leaving the browser (e.g. when
+    // our own overlay activity takes focus), so the safe overlay is shown only once
+    // per unique URL and does not loop. Reset only when a genuinely different URL is seen.
+    private var lastSafeOverlayUrl: String? = null
+
     // Cache for URL bar ID (optimization - reduces AccessibilityNodeInfo allocations)
     private var cachedUrlBarId: String? = null
     private var cachedUrlBarPackage: String? = null
@@ -364,18 +370,28 @@ class UrlBlockerAccessibilityService : AccessibilityService() {
 
             scheduleBlock(result, currentActiveModel.name)
         } else {
-            // URL is safe - cancel any pending block and show debug info overlay
+            // URL is safe - cancel any pending block
             cancelPendingBlock()
             Log.d(TAG, "✅ Safe URL: ${result.domain} → model input='${result.extractedDomainName}' (score=${"%.4f".format(result.score)})")
-            showDetectionInfoOverlay(
-                domain = result.domain,
-                extractedDomainName = result.extractedDomainName,
-                score = result.score,
-                isAdult = false,
-                model = currentActiveModel.name,
-                inferenceTimeMs = result.inferenceTimeMs,
-                lexicalFeatures = result.lexicalFeatures
-            )
+
+            // Show the info overlay only ONCE per unique safe URL. Opening the overlay
+            // steals focus and, when it closes, the browser re-fires a window event that
+            // re-classifies the same URL. Without this guard that caused the overlay to
+            // loop forever and blocked the user from continuing to browse.
+            if (url != lastSafeOverlayUrl) {
+                lastSafeOverlayUrl = url
+                showDetectionInfoOverlay(
+                    domain = result.domain,
+                    extractedDomainName = result.extractedDomainName,
+                    score = result.score,
+                    isAdult = false,
+                    model = currentActiveModel.name,
+                    inferenceTimeMs = result.inferenceTimeMs,
+                    lexicalFeatures = result.lexicalFeatures
+                )
+            } else {
+                Log.d(TAG, "⏭️ Safe overlay already shown for this URL, skipping: $url")
+            }
         }
     }
 

@@ -31,7 +31,7 @@ class UrlClassifier @Inject constructor(
     companion object {
         private const val TAG = "UrlClassifier"
         private const val MAX_LEN = 34
-        private const val DEFAULT_THRESHOLD = 0.7f
+        private const val DEFAULT_THRESHOLD = 0.5f
 
         private val CHAR_TO_IDX: Map<Char, Int> = buildMap {
             put('\u0000', 0)  // PAD
