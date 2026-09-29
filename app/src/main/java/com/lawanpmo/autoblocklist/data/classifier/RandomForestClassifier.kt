@@ -23,40 +23,7 @@ class RandomForestClassifier @Inject constructor(
         private const val TAG = "RFClassifier"
         private const val DEFAULT_THRESHOLD = 0.5f
         private const val NUM_FEATURES = 7
-
-        // HARUS identik dengan SUSPICIOUS_WORDS di feature_extraction.py (training/tuning).
-        // Daftar sudah dedup: jika sebuah kata adalah substring kata lain, hanya yang
-        // lebih pendek dipertahankan agar F5 (suspicious_word_count) tidak hitung-ganda.
-        private val SUSPICIOUS_WORDS = setOf(
-            // --- Konten Eksplisit Umum ---
-            "porn", "xxx", "sex", "nude", "naked", "hentai", "erotic",
-            "fetish", "orgasm", "hardcore", "softcore",
-            // --- Bagian Tubuh / Istilah Seksual ---
-            "boobs", "tits", "bigtit", "bigass", "butt", "cock", "dick",
-            "penis", "pussy", "vagina", "anal", "anus", "clitoris",
-            "nipple", "breast",
-            // --- Aktivitas Seksual ---
-            "fuck", "blowjob", "handjob", "footjob", "gangbang", "threesome",
-            "orgy", "cumshot", "creampie", "masturbat", "fingering", "rimming",
-            "fisting", "squirt", "bdsm", "bondage", "spank", "whip", "dildo",
-            "vibrator", "deepthroat", "ejaculat", "intercourse", "brazzer",
-            "baise",  // Bahasa Prancis
-            // --- Kategori / Genre ---
-            "milf", "teen", "mature", "amateur", "lesbian", "gay", "shemale",
-            "tranny", "ladyboy", "interracial", "incest", "voyeur", "upskirt",
-            "escort", "prostitut", "hooker", "stripper", "webcam", "camgirl",
-            "livecam",
-            // --- Istilah Lainnya ---
-            "whore", "bitch", "naughty", "horny", "swinger", "adult",
-            "xvideos", "xnxx", "redtube", "xhamster", "freeport",
-            "jav",
-            "salope", "putain", "pute",  // Bahasa Prancis
-            "bukake", "bukkake", "memek", "ngentot", "kontol", "titit",
-            // Leet-speak umum
-            "p0rn", "s3x", "pr0n", "h3nt4i", "j4v",
-            // --- Tambahan khusus app (tidak ada di list Python, tanpa konflik substring) ---
-            "bokep", "bbw", "onlyfans"
-        )
+        private const val SUSPICIOUS_WORDS_ASSET = "rf/kata_sensitif_android.txt"
 
         private val COMMON_TLDS = setOf(
             "com", "net", "org", "info", "biz", "co", "io", "me", "tv", "cc",
@@ -82,6 +49,21 @@ class RandomForestClassifier @Inject constructor(
     // Dideteksi saat loadModel — mencegah buffer size mismatch yang menyebabkan native crash
     private var modelInputElements: Int = NUM_FEATURES
     private var modelOutputElements: Int = 1
+
+    // Dimuat SEKALI saat classifier diinisialisasi (bukan per-klasifikasi) agar
+    // pencarian n-gram F5 tidak mengulang 10.000 entri di jalur yang diukur waktunya.
+    private val suspiciousWords: Set<String> = loadSuspiciousWords()
+
+    private fun loadSuspiciousWords(): Set<String> {
+        return try {
+            context.assets.open(SUSPICIOUS_WORDS_ASSET).bufferedReader().useLines { lines ->
+                lines.map { it.trim().lowercase() }.filter { it.isNotEmpty() }.toHashSet()
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Gagal memuat daftar kata sensitif dari $SUSPICIOUS_WORDS_ASSET", e)
+            emptySet()
+        }
+    }
 
     override suspend fun loadModel(modelPath: String): Boolean {
         release()
@@ -191,28 +173,10 @@ class RandomForestClassifier @Inject constructor(
         modelOutputElements = 1
     }
 
-    fun extractLexicalFeatures(domain: String): LexicalFeatures {
-        val lower     = domain.lowercase()
-        val digits    = lower.count { it.isDigit() }
-        val letters   = lower.count { it.isLetter() }
-        val dots      = lower.count { it == '.' }
-        val delimiters = lower.count { !it.isLetterOrDigit() && it != '.' }
-        // F5: jumlah kata mencurigakan (COUNT, bukan boolean) — sesuai training Python
-        val suspiciousWordCount = SUSPICIOUS_WORDS.count { lower.contains(it) }
-        val digitToLetterRatio = if (letters > 0) digits.toFloat() / letters.toFloat() else digits.toFloat()
-        // F7: panjang maksimal digit berurutan (COUNT, bukan boolean) — sesuai training Python
-        val maxSequentialDigits = Regex("\\d+").findAll(lower).maxOfOrNull { it.value.length } ?: 0
-
-        return LexicalFeatures(
-            domainLength        = domain.length,
-            numDigits           = digits,
-            numDots             = dots,
-            numDelimiters       = delimiters,
-            suspiciousWordCount = suspiciousWordCount,
-            digitToLetterRatio  = digitToLetterRatio,
-            maxSequentialDigits = maxSequentialDigits
-        )
-    }
+    // F5 dihitung sebagai jumlah n-gram BERBEDA (panjang 2..6) dari domain yang ada
+    // di daftar kata sensitif — irisan HashSet, bukan iterasi 10.000 entri + contains().
+    fun extractLexicalFeatures(domain: String): LexicalFeatures =
+        LexicalFeatureExtractor.extract(domain, suspiciousWords)
 
     /**
      * Buat ByteBuffer dengan ukuran yang TEPAT sesuai kebutuhan model.
