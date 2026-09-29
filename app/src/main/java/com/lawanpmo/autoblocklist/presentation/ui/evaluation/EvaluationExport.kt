@@ -73,13 +73,15 @@ object EvaluationExport {
             .toList()
     }
 
-    /** Susun isi CSV dari hasil evaluasi satu model: url, label, waktu inferensi. */
+    /** Susun isi CSV dari hasil evaluasi satu model: url, label, prob, prediksi, waktu inferensi. */
     fun buildCsv(results: List<SingleModelTestResult>, modelName: String): String {
         val sb = StringBuilder()
-        sb.append("url,label,inference_time_ms\n")
+        sb.append("url,label,prob_porno,pred,inference_time_ms\n")
         for (r in results) {
             sb.append(esc(r.url)).append(',')
             sb.append(if (r.groundTruth) "1" else "0").append(',')
+            sb.append(r.score.toString()).append(',')
+            sb.append(if (r.prediction) "1" else "0").append(',')
             sb.append(fmt(r.inferenceTimeMs, 4))
             sb.append('\n')
         }

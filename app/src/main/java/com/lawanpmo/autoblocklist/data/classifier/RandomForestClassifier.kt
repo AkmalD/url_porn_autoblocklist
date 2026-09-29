@@ -168,15 +168,25 @@ class RandomForestClassifier @Inject constructor(
         }
     }
 
-    /**
-     * Probabilitas porno lewat jalur praproses + inferensi yang sama dengan [classify],
-     * tetapi TANPA gerbang isDomainValid(). Hanya untuk uji paritas dengan prediksi Colab.
-     */
     @Synchronized
-    fun scoreWithoutDomainGate(url: String): Float {
+    override fun classifyWithoutDomainGate(url: String): UrlClassificationResult {
         val interp = checkNotNull(interpreter) { "Model RF belum dimuat" }
-        return runModel(interp, extractLexicalFeatures(normalizeDomain(url)))
+        val startNs = System.nanoTime()
+        val fullDomain = normalizeDomain(url)
+        val features = extractLexicalFeatures(fullDomain)
+        val score = runModel(interp, features)
+        val inferenceTime = (System.nanoTime() - startNs) / 1_000_000.0
+        return UrlClassificationResult(
+            score = score,
+            isAdult = score >= DEFAULT_THRESHOLD,
+            inferenceTimeMs = inferenceTime,
+            domain = fullDomain,
+            lexicalFeatures = features
+        )
     }
+
+    /** Probabilitas porno tanpa gerbang isDomainValid() — untuk uji paritas. */
+    fun scoreWithoutDomainGate(url: String): Float = classifyWithoutDomainGate(url).score
 
     override fun isModelLoaded(): Boolean = interpreter != null
 

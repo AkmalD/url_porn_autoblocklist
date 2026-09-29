@@ -277,18 +277,21 @@ fun EvaluationScreen(onBack: () -> Unit) {
                                 // Buang beberapa inferensi pertama (alokasi tensor
                                 // + JIT TFLite) supaya semua waktu terukur bersih.
                                 snapshot.firstOrNull()?.let { warm ->
-                                    repeat(WARMUP_RUNS) { classifier.classify(warm.url) }
+                                    repeat(WARMUP_RUNS) { classifier.classifyWithoutDomainGate(warm.url) }
                                 }
                                 // ── PENGUKURAN ──────────────────────────────
+                                // Tanpa gerbang isDomainValid() (jalur sama dengan uji
+                                // paritas) → semua domain benar-benar diinferensi di
+                                // kedua model, sehingga data latensi berpasangan.
                                 snapshot.map { item ->
                                     // Ulang N kali, ambil MEDIAN waktu (tahan outlier).
                                     // Skor & prediksi deterministik → pakai run terakhir.
-                                    var last = classifier.classify(item.url)
+                                    var last = classifier.classifyWithoutDomainGate(item.url)
                                     val times = ArrayList<Double>(reps).apply {
                                         add(last.inferenceTimeMs)
                                     }
                                     repeat(reps - 1) {
-                                        last = classifier.classify(item.url)
+                                        last = classifier.classifyWithoutDomainGate(item.url)
                                         times.add(last.inferenceTimeMs)
                                     }
                                     SingleModelTestResult(

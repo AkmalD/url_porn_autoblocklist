@@ -174,15 +174,24 @@ class UrlClassifier @Inject constructor(
         return outputBuffer.float
     }
 
-    /**
-     * Probabilitas porno lewat jalur praproses + inferensi yang sama dengan [classify],
-     * tetapi TANPA gerbang isDomainValid(). Hanya untuk uji paritas dengan prediksi Colab.
-     */
     @Synchronized
-    fun scoreWithoutDomainGate(url: String): Float {
+    override fun classifyWithoutDomainGate(url: String): UrlClassificationResult {
         val interp = checkNotNull(interpreter) { "Model CNN-1D belum dimuat" }
-        return runModel(interp, normalizeDomain(url))
+        val startNs = System.nanoTime()
+        val fullDomain = normalizeDomain(url)
+        val score = runModel(interp, fullDomain)
+        val inferenceTime = (System.nanoTime() - startNs) / 1_000_000.0
+        return UrlClassificationResult(
+            score = score,
+            isAdult = score >= DEFAULT_THRESHOLD,
+            inferenceTimeMs = inferenceTime,
+            domain = fullDomain,
+            extractedDomainName = fullDomain
+        )
     }
+
+    /** Probabilitas porno tanpa gerbang isDomainValid() — untuk uji paritas. */
+    fun scoreWithoutDomainGate(url: String): Float = classifyWithoutDomainGate(url).score
 
     /**
      * Validate if input is a real domain (not a search query)

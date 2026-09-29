@@ -31,6 +31,14 @@ data class UrlClassificationResult(
 interface IUrlClassifier {
     suspend fun loadModel(modelPath: String): Boolean
     fun classify(url: String): UrlClassificationResult
+
+    /**
+     * Seperti [classify] (waktu = normalisasi + praproses + inferensi) tetapi tanpa
+     * gerbang isDomainValid(), dengan ambang prob >= 0.5 seperti Colab. Khusus layar
+     * evaluasi & uji paritas, supaya domain yang sama diukur pada kedua model.
+     */
+    fun classifyWithoutDomainGate(url: String): UrlClassificationResult
+
     fun isModelLoaded(): Boolean
     fun release()
 }
