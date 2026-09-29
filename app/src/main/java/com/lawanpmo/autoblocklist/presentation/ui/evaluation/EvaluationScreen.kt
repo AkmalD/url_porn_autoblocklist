@@ -70,7 +70,8 @@ fun EvaluationScreen(onBack: () -> Unit) {
     var selectedModel by remember(availableModels) {
         mutableStateOf(availableModels.firstOrNull())
     }
-    val testUrls      = remember { mutableStateListOf(*DEFAULT_TEST_URLS.toTypedArray()) }
+    val defaultTestUrls = remember { EvaluationExport.loadDefaultTestUrls(context) }
+    val testUrls      = remember(defaultTestUrls) { mutableStateListOf(*defaultTestUrls.toTypedArray()) }
     var results       by remember { mutableStateOf<List<SingleModelTestResult>?>(null) }
     var evaluatedWith by remember { mutableStateOf<AvailableModel?>(null) }
     var isRunning     by remember { mutableStateOf(false) }
@@ -209,7 +210,7 @@ fun EvaluationScreen(onBack: () -> Unit) {
                 OutlinedButton(
                     onClick  = {
                         testUrls.clear()
-                        testUrls.addAll(DEFAULT_TEST_URLS)
+                        testUrls.addAll(defaultTestUrls)
                         results      = null
                         errorMessage = null
                     },

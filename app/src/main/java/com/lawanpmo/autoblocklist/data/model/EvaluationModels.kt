@@ -62,26 +62,3 @@ data class ModelEvaluationMetrics(
         }
     }
 }
-
-val DEFAULT_TEST_URLS = listOf(
-    TestUrlItem("google.com",        false),
-    TestUrlItem("facebook.com",      false),
-    TestUrlItem("youtube.com",       false),
-    TestUrlItem("wikipedia.org",     false),
-    TestUrlItem("github.com",        false),
-    TestUrlItem("stackoverflow.com", false),
-    TestUrlItem("amazon.com",        false),
-    TestUrlItem("twitter.com",       false),
-    TestUrlItem("instagram.com",     false),
-    TestUrlItem("kompas.com",        false),
-    TestUrlItem("pornhub.com",       true),
-    TestUrlItem("xvideos.com",       true),
-    TestUrlItem("xnxx.com",          true),
-    TestUrlItem("xhamster.com",      true),
-    TestUrlItem("redtube.com",       true),
-    TestUrlItem("youporn.com",       true),
-    TestUrlItem("brazzers.com",      true),
-    TestUrlItem("sex.com",           true),
-    TestUrlItem("bokep.com",         true),
-    TestUrlItem("hentai.tv",         true)
-)

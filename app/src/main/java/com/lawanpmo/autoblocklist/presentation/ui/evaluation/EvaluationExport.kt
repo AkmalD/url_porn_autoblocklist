@@ -19,6 +19,29 @@ import java.util.Locale
  */
 object EvaluationExport {
 
+    /** Path assets dari daftar 500 URL uji latensi (250 adult + 250 aman). */
+    private const val DEFAULT_TEST_URLS_ASSET = "eval/latency_500.csv"
+
+    /**
+     * Muat daftar URL uji default dari assets (kolom `domain,label`). Dipanggil sekali
+     * saat layar evaluasi dibuka / tombol Reset ditekan — di luar loop warm-up & pengukuran.
+     */
+    fun loadDefaultTestUrls(context: Context): List<TestUrlItem> {
+        return try {
+            context.assets.open(DEFAULT_TEST_URLS_ASSET).bufferedReader().useLines { lines ->
+                lines.drop(1) // header: domain,label
+                    .mapNotNull { line ->
+                        val parts = line.trim().split(",").map { it.trim() }
+                        if (parts.size < 2 || parts[0].isEmpty()) return@mapNotNull null
+                        TestUrlItem(parts[0].lowercase(), parts[1] == "1")
+                    }
+                    .toList()
+            }
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
     /**
      * Parse teks tempel massal menjadi daftar [TestUrlItem].
      *
