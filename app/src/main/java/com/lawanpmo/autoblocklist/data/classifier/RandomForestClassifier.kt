@@ -126,18 +126,7 @@ class RandomForestClassifier @Inject constructor(
         }
 
         return try {
-            val inputBuffer  = buildInputBuffer(features, modelInputElements)
-            val outputBuffer = ByteBuffer.allocateDirect(modelOutputElements * 4).order(ByteOrder.nativeOrder())
-
-            interp.run(inputBuffer, outputBuffer)
-
-            outputBuffer.rewind()
-            val score = if (modelOutputElements >= 2) {
-                outputBuffer.float  // skip p_safe
-                outputBuffer.float  // p_adult
-            } else {
-                outputBuffer.float
-            }
+            val score = runModel(interp, features)
 
             val inferenceTime = (System.nanoTime() - startNs) / 1_000_000.0
             val isAdult = score > DEFAULT_THRESHOLD
@@ -162,6 +151,31 @@ class RandomForestClassifier @Inject constructor(
                 lexicalFeatures = features
             )
         }
+    }
+
+    private fun runModel(interp: Interpreter, features: LexicalFeatures): Float {
+        val inputBuffer  = buildInputBuffer(features, modelInputElements)
+        val outputBuffer = ByteBuffer.allocateDirect(modelOutputElements * 4).order(ByteOrder.nativeOrder())
+
+        interp.run(inputBuffer, outputBuffer)
+
+        outputBuffer.rewind()
+        return if (modelOutputElements >= 2) {
+            outputBuffer.float  // skip p_safe
+            outputBuffer.float  // p_adult
+        } else {
+            outputBuffer.float
+        }
+    }
+
+    /**
+     * Probabilitas porno lewat jalur praproses + inferensi yang sama dengan [classify],
+     * tetapi TANPA gerbang isDomainValid(). Hanya untuk uji paritas dengan prediksi Colab.
+     */
+    @Synchronized
+    fun scoreWithoutDomainGate(url: String): Float {
+        val interp = checkNotNull(interpreter) { "Model RF belum dimuat" }
+        return runModel(interp, extractLexicalFeatures(normalizeDomain(url)))
     }
 
     override fun isModelLoaded(): Boolean = interpreter != null

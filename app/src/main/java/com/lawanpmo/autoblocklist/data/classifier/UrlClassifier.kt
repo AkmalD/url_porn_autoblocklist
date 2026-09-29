@@ -144,14 +144,7 @@ class UrlClassifier @Inject constructor(
             // Gunakan domain penuh (setelah strip protokol/www.) — sesuai format training dataset
             // Contoh: play.google.com → play.google.com (bukan hanya "google")
             //         pornhub.tahu.bulat.com → pornhub.tahu.bulat.com (kata "pornhub" tetap ada)
-            val tokens = tokenize(fullDomain)
-            val inputBuffer = prepareInputBuffer(tokens)
-            val outputBuffer = ByteBuffer.allocateDirect(4).order(ByteOrder.nativeOrder())
-
-            interp.run(inputBuffer, outputBuffer)
-
-            outputBuffer.rewind()
-            val score = outputBuffer.float
+            val score = runModel(interp, fullDomain)
             val inferenceTime = (System.nanoTime() - startNs) / 1_000_000.0
             val isAdult = score > threshold
 
@@ -168,6 +161,27 @@ class UrlClassifier @Inject constructor(
             Log.e(TAG, "Classification error for: $url", e)
             UrlClassificationResult.error(normalizeDomain(url))
         }
+    }
+
+    private fun runModel(interp: Interpreter, fullDomain: String): Float {
+        val tokens = tokenize(fullDomain)
+        val inputBuffer = prepareInputBuffer(tokens)
+        val outputBuffer = ByteBuffer.allocateDirect(4).order(ByteOrder.nativeOrder())
+
+        interp.run(inputBuffer, outputBuffer)
+
+        outputBuffer.rewind()
+        return outputBuffer.float
+    }
+
+    /**
+     * Probabilitas porno lewat jalur praproses + inferensi yang sama dengan [classify],
+     * tetapi TANPA gerbang isDomainValid(). Hanya untuk uji paritas dengan prediksi Colab.
+     */
+    @Synchronized
+    fun scoreWithoutDomainGate(url: String): Float {
+        val interp = checkNotNull(interpreter) { "Model CNN-1D belum dimuat" }
+        return runModel(interp, normalizeDomain(url))
     }
 
     /**
